@@ -68,6 +68,17 @@ class StabilityConfig:
     # and the perceptual-hash gate is what actually prevents a double capture,
     # whereas a missed turn loses a page with no way to notice.
     turn_threshold: float = field(default_factory=lambda: _env_float("SCR_TURN_THRESH", 4.0))
+    # Re-arming also happens when the *view* changes without much movement,
+    # because motion cannot see a page turn on a static camera: swapping pages
+    # reads 2.87 on the motion metric while the same page under sensor noise
+    # reads 2.41. See `StabilityTracker._content_changed` for why the hash needs
+    # to be this large and why the input resolution does not matter.
+    content_hash_size: int = field(default_factory=lambda: _env_int("SCR_CONTENT_HASH", 24))
+    # Measured on static captures: the same page stays within 31 of 576 bits
+    # (5.4%), two different pages differ by at least 38 (6.6%).
+    content_change_ratio: float = field(
+        default_factory=lambda: _env_float("SCR_CONTENT_CHANGE", 0.06)
+    )
 
 
 @dataclass

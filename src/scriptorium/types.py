@@ -43,6 +43,17 @@ class QualityReport:
             "reasons": list(self.reasons),
         }
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> QualityReport:
+        return cls(
+            sharpness=data["sharpness"],
+            exposure=data["exposure"],
+            clipped_ratio=data["clipped_ratio"],
+            glare_ratio=data["glare_ratio"],
+            ok=data["ok"],
+            reasons=tuple(data.get("reasons", ())),
+        )
+
 
 @dataclass
 class PageCandidate:
@@ -64,10 +75,25 @@ class OcrWord:
     bbox: tuple[int, int, int, int]
     confidence: float
 
+    def as_dict(self) -> dict[str, Any]:
+        return {"text": self.text, "bbox": list(self.bbox), "confidence": self.confidence}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> OcrWord:
+        x, y, w, h = data["bbox"]
+        return cls(text=data["text"], bbox=(x, y, w, h), confidence=data["confidence"])
+
 
 @dataclass
 class OcrLine:
     words: list[OcrWord]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"words": [word.as_dict() for word in self.words]}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> OcrLine:
+        return cls(words=[OcrWord.from_dict(word) for word in data["words"]])
 
     @property
     def text(self) -> str:
@@ -86,6 +112,29 @@ class OcrPage:
     width: int
     height: int
     engine: str = "unknown"
+
+    def as_dict(self) -> dict[str, Any]:
+        """Full recognition result, not just the text.
+
+        Stored books keep this because the word boxes are what the read-aloud
+        highlight needs. A library that saved only the transcription could show
+        a book again but never read it back the same way.
+        """
+        return {
+            "lines": [line.as_dict() for line in self.lines],
+            "width": self.width,
+            "height": self.height,
+            "engine": self.engine,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> OcrPage:
+        return cls(
+            lines=[OcrLine.from_dict(line) for line in data["lines"]],
+            width=data["width"],
+            height=data["height"],
+            engine=data.get("engine", "unknown"),
+        )
 
     @property
     def text(self) -> str:
@@ -125,3 +174,46 @@ class PageResult:
         `self.ocr.text` is still there for anyone who needs the raw layout.
         """
         return self.reading_text or self.ocr.text
+
+
+def page_as_dict(page: PageResult) -> dict[str, Any]:
+    """Serialise a finished page for storage.
+
+    Deliberately a function rather than a method: `PageResult` is the contract
+    passed between pipeline stages, and keeping persistence concerns out of it
+    is what lets the stages stay unaware of whether anything is being stored.
+    """
+    return {
+        "page_number": page.page_number,
+        "ocr": page.ocr.as_dict(),
+        "candidate": {
+            "frame_index": page.candidate.frame_index,
+            "timestamp": page.candidate.timestamp,
+            "quad": [list(point) for point in page.candidate.quad],
+            "quality": page.candidate.quality.as_dict(),
+            "phash": page.candidate.phash,
+            "side": page.candidate.side,
+        },
+        "dewarped": page.dewarped,
+        "timings_ms": page.timings_ms,
+        "reading_text": page.reading_text,
+    }
+
+
+def page_from_dict(data: dict[str, Any]) -> PageResult:
+    candidate = data["candidate"]
+    return PageResult(
+        page_number=data["page_number"],
+        ocr=OcrPage.from_dict(data["ocr"]),
+        candidate=PageCandidate(
+            frame_index=candidate["frame_index"],
+            timestamp=candidate["timestamp"],
+            quad=[(x, y) for x, y in candidate["quad"]],
+            quality=QualityReport.from_dict(candidate["quality"]),
+            phash=candidate["phash"],
+            side=candidate.get("side", "single"),
+        ),
+        dewarped=data["dewarped"],
+        timings_ms=data.get("timings_ms", {}),
+        reading_text=data.get("reading_text", ""),
+    )

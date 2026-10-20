@@ -6,6 +6,7 @@
   :root {
     --bg: #12100e;
     --panel: #1c1917;
+    --raised: #272320;
     --ink: #f5f0e8;
     --muted: #a39a8c;
     --line: #2e2a26;
@@ -13,67 +14,98 @@
     --warn: #e0a458;
     --busy: #6b9ac4;
     --mark: #ffd166;
+    --danger: #c4706b;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--bg); color: var(--ink);
     font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   }
-  header { padding: 20px 24px 8px; }
-  h1 { margin: 0; font-size: 19px; letter-spacing: -0.01em; }
-  header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; max-width: 62ch; }
-  main {
-    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 16px; padding: 16px 24px 24px; align-items: start;
+  header {
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+    padding: 18px 24px 12px; border-bottom: 1px solid var(--line);
   }
-  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  h1 { margin: 0; font-size: 18px; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+  main { padding: 18px 24px 28px; }
+
+  button {
+    padding: 9px 14px; border-radius: 7px; cursor: pointer;
+    background: var(--raised); color: var(--ink); border: 1px solid var(--line);
+    font: inherit; font-size: 13px;
+  }
+  button:hover:not(:disabled) { background: #332e29; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.primary { background: #3d6b4f; border-color: #4a7d5e; }
+  button.ghost { background: transparent; }
+  button.danger { color: var(--danger); }
+  input[type="text"] {
+    flex: 1; min-width: 0; padding: 9px 12px; border-radius: 7px;
+    background: #15130f; color: var(--ink); border: 1px solid var(--line); font: inherit;
+  }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
-  .stage { position: relative; overflow: hidden; }
-  video { display: block; width: 100%; background: #000; }
-  /* The detected page outline, drawn over the preview. Without it, "no page
-     detected" is an opaque refusal and there is no way to tell whether the page
-     is too small in frame or just too close in tone to the surface. */
-  #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-  .hint {
-    position: absolute; bottom: 12px; left: 12px; right: 12px;
-    padding: 7px 11px; border-radius: 7px; font-size: 12px;
-    background: rgba(0, 0, 0, 0.78); border: 1px solid var(--line);
-    color: var(--warn);
+
+  /* ---------------------------------------------------------- library view */
+  .toolbar { display: flex; gap: 8px; margin-bottom: 18px; max-width: 620px; }
+  .books { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+  .book { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .book h3 { margin: 0; font-size: 15px; overflow-wrap: anywhere; }
+  .book .sub { color: var(--muted); font-size: 12px; }
+  .book .actions { display: flex; gap: 6px; margin-top: auto; }
+  .book .actions button { flex: 1; }
+  .spine { height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--ok), #4a7d5e); }
+  .blank { padding: 36px 20px; text-align: center; color: var(--muted); font-size: 13.5px; }
+
+  /* ------------------------------------------------------------- book view */
+  .book-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .book-head h2 { margin: 0; font-size: 17px; flex: 1; min-width: 160px; overflow-wrap: anywhere; }
+  .book-head .sub { color: var(--muted); font-size: 13px; }
+  .columns {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 16px; align-items: start;
   }
+  @media (max-width: 980px) { .columns { grid-template-columns: 1fr; } }
+
+  .viewport { position: relative; line-height: 0; border-radius: 10px 10px 0 0; overflow: hidden; }
+  video { display: block; width: 100%; background: #000; }
+  /* The overlay is sized from the viewport, which is exactly the video. Anything
+     else inside it would skew the scale and draw the outline out of place. */
+  #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
   .badge {
     position: absolute; top: 12px; left: 12px;
-    padding: 5px 11px; border-radius: 999px;
+    padding: 5px 11px; border-radius: 999px; line-height: 1.5;
     font-size: 12px; font-weight: 600; letter-spacing: 0.03em;
     background: rgba(0, 0, 0, 0.72); border: 1px solid var(--line);
   }
   .badge.captured { color: var(--ok); border-color: var(--ok); }
   .badge.settling { color: var(--busy); border-color: var(--busy); }
   .badge.searching, .badge.moving { color: var(--warn); border-color: var(--warn); }
-  .controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; border-top: 1px solid var(--line); }
-  button {
-    flex: 1 1 auto; padding: 9px 12px; border-radius: 7px; cursor: pointer;
-    background: #272320; color: var(--ink); border: 1px solid var(--line);
-    font: inherit; font-size: 13px; min-width: 96px;
+  .hint {
+    position: absolute; bottom: 10px; left: 10px; right: 10px;
+    padding: 7px 11px; border-radius: 7px; font-size: 12px; line-height: 1.45;
+    background: rgba(0, 0, 0, 0.8); border: 1px solid var(--line); color: var(--warn);
   }
-  button:hover:not(:disabled) { background: #332e29; }
-  button:disabled { opacity: 0.45; cursor: default; }
-  button.primary { background: #3d6b4f; border-color: #4a7d5e; }
-  .meta { padding: 12px 14px; border-bottom: 1px solid var(--line); }
-  .meta dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; font-size: 13px; }
-  .meta dt { color: var(--muted); }
-  .meta dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; border-top: 1px solid var(--line);
+  }
+  .controls button { flex: 1 1 auto; min-width: 92px; }
+  .row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 14px 12px; font-size: 12px; color: var(--muted);
+  }
+  .row input[type="range"] { flex: 1; }
+  label.toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 
-  /* Reading view: the page image with a highlight tracking the voice. */
-  .reader { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .reader { padding: 12px 14px; }
   .reader-head {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 10px; margin-bottom: 10px;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    margin-bottom: 10px;
   }
-  .reader-head h2 { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
-  .spoken { font-size: 13px; color: var(--ink); min-height: 1.5em; }
+  .reader-head h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
+  .spoken { font-size: 13px; min-height: 1.5em; }
   .spoken b { color: var(--mark); }
   .page-wrap {
-    position: relative; max-height: 52vh; overflow-y: auto;
+    position: relative; max-height: 50vh; overflow-y: auto;
     border: 1px solid var(--line); border-radius: 7px; background: #0b0a09;
   }
   .page-wrap img { display: block; width: 100%; }
@@ -83,102 +115,252 @@
     box-shadow: 0 0 0 1.5px rgba(255, 209, 102, 0.85);
     transition: top 90ms linear, left 90ms linear, width 90ms linear;
   }
-  .row { display: flex; align-items: center; gap: 10px; padding: 10px 14px 0; font-size: 12px; color: var(--muted); }
-  .row input[type="range"] { flex: 1; }
-  label.toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 
-  .pages { max-height: 30vh; overflow-y: auto; padding: 6px; }
-  .page { padding: 10px 12px; border-bottom: 1px solid var(--line); display: flex; gap: 10px; align-items: flex-start; }
-  .page:last-child { border-bottom: 0; }
-  .page div { min-width: 0; flex: 1; }
-  .page h3 { margin: 0 0 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
-  .page p { margin: 0; font-size: 13px; white-space: pre-wrap; max-height: 4.2em; overflow: hidden; }
-  .page button { flex: 0 0 auto; min-width: 0; padding: 5px 10px; font-size: 12px; }
-  .empty { padding: 22px 14px; color: var(--muted); font-size: 13px; text-align: center; }
-  .note { padding: 10px 14px; font-size: 12px; color: var(--warn); }
+  .pages { margin-top: 16px; }
+  .pages h3 { margin: 0 0 10px; font-size: 13px; color: var(--muted); font-weight: 600; }
+  .page-strip { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+  .page-card { padding: 11px 13px; cursor: pointer; }
+  .page-card:hover { background: var(--raised); }
+  .page-card.active { border-color: var(--ok); }
+  .page-card h4 { margin: 0 0 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .page-card p { margin: 0; font-size: 12.5px; max-height: 4em; overflow: hidden; }
+  .error { color: var(--danger); font-size: 13px; padding: 10px 0; }
 </style>
 
 <header>
   <h1>Scriptorium</h1>
-  <p>
-    Point the camera at a page and hold still. Frames are triaged on arrival; only a
-    settled, unseen page is recognised &mdash; then read aloud, with the highlight
-    following the voice word by word.
-  </p>
+  <p id="subtitle">Your library. Create a book, then add pages to it with the camera.</p>
 </header>
 
 <main>
-  <div>
-    <div class="panel stage">
-      <div id="badge" class="badge searching">idle</div>
-      <video id="video" playsinline muted></video>
-      <canvas id="overlay"></canvas>
-      <div id="hint" class="hint" hidden></div>
-      <div class="controls">
-        <button id="start" class="primary">Start session</button>
-        <button id="pdf" disabled>PDF</button>
-        <button id="epub" disabled>EPUB</button>
-        <button id="stop" disabled>Stop</button>
+  <!-- ------------------------------------------------------- library view -->
+  <section id="library-view">
+    <div class="toolbar">
+      <input type="text" id="new-title" placeholder="Title of the new book" />
+      <button id="create" class="primary">New book</button>
+    </div>
+    <div id="books" class="books"></div>
+    <div id="library-error" class="error" hidden></div>
+  </section>
+
+  <!-- ---------------------------------------------------------- book view -->
+  <section id="book-view" hidden>
+    <div class="book-head">
+      <button id="back" class="ghost">&larr; Library</button>
+      <h2 id="book-title"></h2>
+      <span id="book-sub" class="sub"></span>
+      <button id="pdf">PDF</button>
+      <button id="epub">EPUB</button>
+    </div>
+
+    <div class="columns">
+      <div class="panel">
+        <div class="viewport">
+          <div id="badge" class="badge searching">camera off</div>
+          <video id="video" playsinline muted></video>
+          <canvas id="overlay"></canvas>
+          <div id="hint" class="hint" hidden></div>
+        </div>
+        <div class="controls">
+          <button id="add-pages" class="primary">Add pages</button>
+          <button id="stop-camera" disabled>Stop camera</button>
+        </div>
+        <div class="row">
+          <label class="toggle">
+            <input type="checkbox" id="autoread" checked />
+            read each page as it is captured
+          </label>
+        </div>
+        <div class="row" style="padding-top: 0"><span id="capture-stats"></span></div>
       </div>
-      <div class="row" style="padding-bottom: 12px">
-        <label class="toggle">
-          <input type="checkbox" id="autoread" checked />
-          read each page as it is captured
-        </label>
+
+      <div class="panel reader">
+        <div class="reader-head">
+          <h3 id="reader-title">Reading view</h3>
+          <span class="spoken" id="spoken"></span>
+        </div>
+        <div class="page-wrap" id="page-wrap">
+          <div class="blank" id="reader-blank">Select a page, or capture one.</div>
+          <img id="page-image" alt="" hidden />
+        </div>
+        <div class="row" style="padding-top: 12px">
+          <span>speed</span>
+          <input type="range" id="rate" min="0.6" max="1.6" step="0.05" value="1" />
+          <span id="rate-value">1.00&times;</span>
+        </div>
+        <div class="controls" style="border-top: 0; padding-left: 0; padding-right: 0">
+          <button id="play" class="primary" disabled>Read aloud</button>
+          <button id="pause" disabled>Pause</button>
+          <button id="stop-reading" disabled>Stop</button>
+        </div>
+        <div id="speech-note" class="error" hidden></div>
       </div>
     </div>
 
-    <div class="panel" style="margin-top: 16px">
-      <div class="meta">
-        <dl>
-          <dt>session</dt><dd id="m-session">&mdash;</dd>
-          <dt>engine</dt><dd id="m-engine">&mdash;</dd>
-          <dt>pages</dt><dd id="m-pages">0</dd>
-          <dt>motion</dt><dd id="m-motion">&mdash;</dd>
-          <dt>frames sent</dt><dd id="m-frames">0</dd>
-        </dl>
-      </div>
-      <div id="pages" class="pages"><div class="empty">No pages yet.</div></div>
+    <div class="pages">
+      <h3>Pages</h3>
+      <div id="page-strip" class="page-strip"></div>
     </div>
-  </div>
-
-  <div class="panel">
-    <div class="reader">
-      <div class="reader-head">
-        <h2 id="r-title">Reading view</h2>
-        <span class="spoken" id="r-spoken"></span>
-      </div>
-      <div class="page-wrap" id="r-wrap">
-        <div class="empty" id="r-empty">Capture a page to read it.</div>
-        <img id="r-image" alt="" hidden />
-      </div>
-      <div class="row">
-        <span>speed</span>
-        <input type="range" id="r-rate" min="0.6" max="1.6" step="0.05" value="1" />
-        <span id="r-rate-value">1.00&times;</span>
-      </div>
-      <div class="controls" style="border-top: 0">
-        <button id="r-play" class="primary" disabled>Read aloud</button>
-        <button id="r-pause" disabled>Pause</button>
-        <button id="r-stop" disabled>Stop</button>
-      </div>
-      <div id="r-note" class="note" hidden></div>
-    </div>
-  </div>
+  </section>
 </main>
 
 <script>
   // Frames go up at a modest rate: the server runs the same stability gate the
   // CLI does, and it needs *consecutive* frames to tell "still" from "moving",
-  // not many per second. 6/s is plenty and keeps the upload light.
+  // not many per second.
   const SEND_HZ = 6;
   const SEND_WIDTH = 1280;
 
   const el = (id) => document.getElementById(id);
-  const video = el("video");
-  const canvas = document.createElement("canvas");
 
-  let sessionId = null;
+  async function api(path, options) {
+    const response = await fetch(path, options);
+    if (!response.ok) {
+      const detail = await response.json().catch(() => ({}));
+      throw new Error(detail.detail || `${response.status} ${response.statusText}`);
+    }
+    return response.json();
+  }
+
+  let book = null;          // the open book record
+  let pages = [];           // its pages, as returned by the API
+  let currentPage = null;   // the page shown in the reading view
+
+  // ---------------------------------------------------------------- library
+
+  async function showLibrary() {
+    stopCamera();
+    clearReader();
+    book = null;
+    el("book-view").hidden = true;
+    el("library-view").hidden = false;
+    el("subtitle").textContent =
+      "Your library. Create a book, then add pages to it with the camera.";
+    await renderLibrary();
+  }
+
+  async function renderLibrary() {
+    const list = el("books");
+    try {
+      const { books } = await api("/v1/books");
+      el("library-error").hidden = true;
+      list.innerHTML = "";
+      if (!books.length) {
+        list.innerHTML =
+          '<div class="blank panel">No books yet. Name one above and start scanning.</div>';
+        return;
+      }
+      for (const record of books) list.append(bookCard(record));
+    } catch (error) {
+      el("library-error").hidden = false;
+      el("library-error").textContent = error.message;
+    }
+  }
+
+  function bookCard(record) {
+    const node = document.createElement("div");
+    node.className = "panel book";
+
+    const spine = document.createElement("div");
+    spine.className = "spine";
+
+    const title = document.createElement("h3");
+    title.textContent = record.title;
+
+    const sub = document.createElement("div");
+    sub.className = "sub";
+    sub.textContent =
+      `${record.page_count} ${record.page_count === 1 ? "page" : "pages"} · ` +
+      record.updated_at.slice(0, 10);
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+
+    const open = document.createElement("button");
+    open.className = "primary";
+    open.textContent = "Open";
+    open.addEventListener("click", () => openBook(record.id).catch(reportError));
+
+    const remove = document.createElement("button");
+    remove.className = "danger";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", async () => {
+      if (!confirm(`Delete "${record.title}" and all its pages?`)) return;
+      await api(`/v1/books/${record.id}`, { method: "DELETE" }).catch(reportError);
+      renderLibrary();
+    });
+
+    actions.append(open, remove);
+    node.append(spine, title, sub, actions);
+    return node;
+  }
+
+  async function createBook() {
+    const title = el("new-title").value.trim();
+    const record = await api("/v1/books", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+    el("new-title").value = "";
+    await openBook(record.id);
+  }
+
+  // -------------------------------------------------------------- book view
+
+  async function openBook(bookId) {
+    const body = await api(`/v1/books/${bookId}`);
+    book = body.book;
+    pages = body.pages;
+    currentPage = null;
+
+    el("library-view").hidden = true;
+    el("book-view").hidden = false;
+    el("subtitle").textContent = "Point the camera at a page and hold still.";
+    el("book-title").textContent = book.title;
+    el("capture-stats").textContent = "";
+    framesSent = 0;
+    setState("searching", "camera off");
+    renderPages();
+
+    if (pages.length) await openPage(pages[pages.length - 1].page_number);
+    else clearReader();
+  }
+
+  function renderPages() {
+    el("book-sub").textContent =
+      `${book.page_count} ${book.page_count === 1 ? "page" : "pages"}`;
+    el("pdf").disabled = !book.page_count;
+    el("epub").disabled = !book.page_count;
+
+    const strip = el("page-strip");
+    strip.innerHTML = "";
+    if (!pages.length) {
+      strip.innerHTML =
+        '<div class="blank panel">No pages yet. Press <b>Add pages</b> and show the camera a page.</div>';
+      return;
+    }
+    for (const page of [...pages].reverse()) strip.append(pageCard(page));
+  }
+
+  function pageCard(page) {
+    const node = document.createElement("div");
+    node.className = "panel page-card" + (currentPage === page.page_number ? " active" : "");
+
+    const head = document.createElement("h4");
+    head.textContent =
+      `page ${page.page_number} · ${page.dewarped ? "dewarped" : "flat"} · ` +
+      `conf ${(page.confidence * 100).toFixed(0)}%`;
+    const body = document.createElement("p");
+    body.textContent = page.text || "(no text recognised)";
+
+    node.append(head, body);
+    node.addEventListener("click", () => openPage(page.page_number).then(play).catch(reportError));
+    return node;
+  }
+
+  // ---------------------------------------------------------------- capture
+
   let stream = null;
   let timer = null;
   let inFlight = false;
@@ -192,67 +374,72 @@
     captured: "captured - turn the page",
   };
 
-  function setState(state) {
+  function setState(state, label) {
     const badge = el("badge");
     badge.className = "badge " + state;
-    badge.textContent = STATE_LABEL[state] || state;
+    badge.textContent = label || STATE_LABEL[state] || state;
   }
 
-  // ---------------------------------------------------------------- capture
-
-  async function start() {
+  async function startCamera() {
     stream = await navigator.mediaDevices.getUserMedia({
       video: { width: { ideal: 1920 }, facingMode: "environment" },
     });
-    video.srcObject = stream;
-    await video.play();
+    el("video").srcObject = stream;
+    await el("video").play();
 
-    const created = await fetch("/v1/sessions", { method: "POST" }).then((r) => r.json());
-    sessionId = created.session_id;
-    el("m-session").textContent = sessionId;
-    el("m-engine").textContent = created.engine;
+    el("add-pages").disabled = true;
+    el("stop-camera").disabled = false;
+    timer = setInterval(() => sendFrame(), 1000 / SEND_HZ);
+  }
 
-    el("start").disabled = true;
-    el("stop").disabled = false;
-    timer = setInterval(sendFrame, 1000 / SEND_HZ);
+  function stopCamera() {
+    clearInterval(timer);
+    timer = null;
+    stream?.getTracks().forEach((track) => track.stop());
+    stream = null;
+    el("add-pages").disabled = false;
+    el("stop-camera").disabled = true;
+    drawQuad(null, null);
+    el("hint").hidden = true;
+    setState("searching", "camera off");
+    if (book) fetch(`/v1/books/${book.id}/close`, { method: "POST" }).catch(() => {});
   }
 
   async function sendFrame() {
     // Drop frames rather than queue them: a backed-up queue would feed the
     // stability tracker stale motion and it would never see the page settle.
-    if (!sessionId || inFlight || video.readyState < 2) return;
+    const video = el("video");
+    if (!book || !stream || inFlight || video.readyState < 2) return;
     inFlight = true;
     try {
+      const canvas = document.createElement("canvas");
       const scale = Math.min(1, SEND_WIDTH / video.videoWidth);
       canvas.width = Math.round(video.videoWidth * scale);
       canvas.height = Math.round(video.videoHeight * scale);
       canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.88));
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.88));
       const body = new FormData();
       body.append("file", blob, "frame.jpg");
 
-      const data = await fetch(`/v1/sessions/${sessionId}/frames`, { method: "POST", body })
-        .then((r) => r.json());
+      const data = await api(`/v1/books/${book.id}/frames`, { method: "POST", body });
 
       framesSent += 1;
-      el("m-frames").textContent = framesSent;
-      el("m-motion").textContent = Number(data.motion).toFixed(2);
-      el("m-pages").textContent = data.total_pages;
+      el("capture-stats").textContent =
+        `${framesSent} frames sent · motion ${Number(data.motion).toFixed(2)}`;
       setState(data.state);
       drawQuad(data.quad, data.frame_size);
       showHint(data);
 
       if (data.captured_now?.length) {
-        for (const page of data.captured_now) addPage(page);
-        el("pdf").disabled = false;
-        if (el("autoread").checked) {
-          const last = data.captured_now[data.captured_now.length - 1];
-          openPage(last.page_number).then(() => play());
-        }
+        pages.push(...data.captured_now);
+        book.page_count = data.total_pages;
+        const last = data.captured_now[data.captured_now.length - 1];
+        if (el("autoread").checked) openPage(last.page_number).then(play).catch(reportError);
+        else renderPages();
       }
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      console.error(error);
     } finally {
       inFlight = false;
     }
@@ -260,13 +447,13 @@
 
   const HINTS = {
     no_page:
-      "No page detected. Fill more of the frame with the page, and put the book " +
-      "on a surface that differs in tone from the paper.",
-    blurry: "Out of focus - hold steadier or move slightly further away.",
-    too_dark: "Too dark for reliable recognition - add light.",
-    too_bright: "Overexposed - reduce the light on the page.",
-    clipped: "Highlights blown out - move the lamp off the page.",
-    glare: "Reflection on the page - move the lamp to the side, not in front.",
+      "No page detected. Fill more of the frame with the page — it needs roughly 40% of the " +
+      "width and height — and put the book on a surface that differs in tone from the paper.",
+    blurry: "Out of focus — hold steadier, or move slightly further away.",
+    too_dark: "Too dark for reliable recognition — add light.",
+    too_bright: "Overexposed — reduce the light on the page.",
+    clipped: "Highlights blown out — move the lamp off the page.",
+    glare: "Reflection on the page — move the lamp to the side, not in front.",
   };
 
   function showHint(data) {
@@ -276,15 +463,12 @@
       hint.hidden = true;
       return;
     }
-    const key = String(reason).split("(")[0];
     hint.hidden = false;
-    hint.textContent = HINTS[key] || key;
+    hint.textContent = HINTS[String(reason).split("(")[0]] || reason;
   }
 
   function drawQuad(quad, frameSize) {
     const canvas = el("overlay");
-    // Match the backing store to the displayed size, or the outline lands in the
-    // wrong place on a high-DPI screen.
     const rect = canvas.getBoundingClientRect();
     if (canvas.width !== Math.round(rect.width) || canvas.height !== Math.round(rect.height)) {
       canvas.width = Math.round(rect.width);
@@ -301,10 +485,8 @@
 
     ctx.beginPath();
     quad.forEach(([x, y], index) => {
-      const px = x * sx;
-      const py = y * sy;
-      if (index === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
+      if (index === 0) ctx.moveTo(x * sx, y * sy);
+      else ctx.lineTo(x * sx, y * sy);
     });
     ctx.closePath();
     ctx.strokeStyle = "rgba(127, 176, 105, 0.95)";
@@ -321,42 +503,7 @@
     }
   }
 
-  function addPage(page) {
-    const list = el("pages");
-    list.querySelector(".empty")?.remove();
-
-    const node = document.createElement("div");
-    node.className = "page";
-
-    const body = document.createElement("div");
-    const head = document.createElement("h3");
-    head.textContent =
-      `page ${page.page_number} - ${page.side} - dewarp ${page.dewarped ? "on" : "off"}` +
-      ` - conf ${(page.confidence * 100).toFixed(0)}%`;
-    const text = document.createElement("p");
-    text.textContent = page.text || "(no text recognised)";
-    body.append(head, text);
-
-    const read = document.createElement("button");
-    read.textContent = "Read";
-    read.addEventListener("click", () => openPage(page.page_number).then(() => play()));
-
-    node.append(body, read);
-    list.prepend(node);
-  }
-
-  function stop() {
-    clearInterval(timer);
-    timer = null;
-    stream?.getTracks().forEach((t) => t.stop());
-    el("start").disabled = false;
-    el("stop").disabled = true;
-    setState("searching");
-    drawQuad(null, null);
-    el("hint").hidden = true;
-  }
-
-  // ---------------------------------------------------------- reading aloud
+  // ----------------------------------------------------------- reading aloud
 
   // The server builds the utterance and the word geometry together, so the
   // engine's character offsets resolve against the same string it is speaking.
@@ -369,23 +516,36 @@
 
   const synth = window.speechSynthesis;
   if (!synth) {
-    el("r-note").hidden = false;
-    el("r-note").textContent =
-      "This browser has no speech synthesis, so read-aloud is unavailable. The page " +
-      "image and the exported PDF still work.";
+    el("speech-note").hidden = false;
+    el("speech-note").textContent =
+      "This browser has no speech synthesis, so read-aloud is unavailable. " +
+      "The pages, the PDF and the EPUB still work.";
+  }
+
+  function clearReader() {
+    cancelSpeech();
+    script = null;
+    currentPage = null;
+    el("page-image").hidden = true;
+    el("reader-blank").hidden = false;
+    el("reader-title").textContent = "Reading view";
+    el("spoken").textContent = "";
+    el("play").disabled = true;
   }
 
   async function openPage(pageNumber) {
+    if (!book) return;
     cancelSpeech();
-    script = await fetch(`/v1/sessions/${sessionId}/pages/${pageNumber}/script`)
-      .then((r) => r.json());
+    script = await api(`/v1/books/${book.id}/pages/${pageNumber}/script`);
+    currentPage = pageNumber;
 
-    const image = el("r-image");
-    image.src = `/v1/sessions/${sessionId}/pages/${pageNumber}/image`;
+    const image = el("page-image");
+    image.src = `/v1/books/${book.id}/pages/${pageNumber}/image`;
     image.hidden = false;
-    el("r-empty").hidden = true;
-    el("r-title").textContent = `Reading page ${pageNumber}`;
-    el("r-play").disabled = !synth;
+    el("reader-blank").hidden = true;
+    el("reader-title").textContent = `Page ${pageNumber}`;
+    el("play").disabled = !synth || !script.text;
+    renderPages();
     clearMarks();
   }
 
@@ -393,13 +553,13 @@
     if (!synth || !script?.text) return;
     if (synth.paused && utterance) {
       synth.resume();
-      setButtons(true);
+      setSpeechButtons(true);
       return;
     }
     cancelSpeech();
 
     utterance = new SpeechSynthesisUtterance(script.text);
-    utterance.rate = Number(el("r-rate").value);
+    utterance.rate = Number(el("rate").value);
     const voice = pickVoice();
     if (voice) {
       utterance.voice = voice;
@@ -407,7 +567,7 @@
     }
 
     // Chrome and Edge fire this per word; Safari is unreliable about it, so a
-    // time-based estimate takes over if nothing arrives (see startFallback).
+    // time-based estimate takes over if nothing arrives.
     utterance.addEventListener("boundary", (event) => {
       stopFallback();
       highlightAtChar(event.charIndex);
@@ -415,23 +575,25 @@
     utterance.addEventListener("end", () => {
       stopFallback();
       clearMarks();
-      el("r-spoken").textContent = "";
-      setButtons(false);
+      el("spoken").textContent = "";
+      setSpeechButtons(false);
     });
 
     synth.speak(utterance);
-    setButtons(true);
+    setSpeechButtons(true);
     startFallback();
   }
 
   function pickVoice() {
     const voices = synth.getVoices();
     if (!voices.length) return null;
-    // Prefer a Spanish voice: the corpus and the intended readers are Spanish,
-    // and an English voice reading Spanish text is unintelligible.
+    // Prefer a voice matching the book's language: an English voice reading
+    // Spanish is unintelligible.
+    const code = (book?.language || "es").toLowerCase();
+    const prefix = code.startsWith("spa") || code.startsWith("es") ? "es" : code.slice(0, 2);
     return (
-      voices.find((v) => v.lang?.toLowerCase().startsWith("es")) ||
-      voices.find((v) => v.default) ||
+      voices.find((voice) => voice.lang?.toLowerCase().startsWith(prefix)) ||
+      voices.find((voice) => voice.default) ||
       voices[0]
     );
   }
@@ -453,13 +615,12 @@
         hi = mid - 1;
       }
     }
-    if (found < 0) return;
-    drawMarks(words[found]);
+    if (found >= 0) drawMarks(words[found]);
   }
 
   function drawMarks(word) {
     clearMarks();
-    const wrap = el("r-wrap");
+    const wrap = el("page-wrap");
     // Percentages, not pixels: the page image is scaled to the panel width, so
     // the highlight has to be expressed relative to the page it was measured on.
     for (const [x, y, w, h] of word.boxes) {
@@ -472,37 +633,34 @@
       wrap.append(mark);
       marks.push(mark);
     }
-    el("r-spoken").innerHTML = "";
+    el("spoken").innerHTML = "";
     const strong = document.createElement("b");
     strong.textContent = word.text;
-    el("r-spoken").append(strong);
+    el("spoken").append(strong);
 
     // Keep the spoken line on screen without yanking the view on every word.
     const first = marks[0];
     if (first) {
       const top = first.offsetTop;
-      const viewTop = wrap.scrollTop;
-      const viewBottom = viewTop + wrap.clientHeight;
-      if (top < viewTop + 40 || top > viewBottom - 80) {
+      if (top < wrap.scrollTop + 40 || top > wrap.scrollTop + wrap.clientHeight - 80) {
         wrap.scrollTo({ top: Math.max(0, top - wrap.clientHeight / 3), behavior: "smooth" });
       }
     }
   }
 
   function clearMarks() {
-    marks.forEach((m) => m.remove());
+    marks.forEach((mark) => mark.remove());
     marks = [];
   }
 
-  // Fallback for engines that do not emit boundary events: advance the highlight
-  // by elapsed time against the character count. Less accurate, but a reader
-  // following along is better served by an approximate highlight than none.
+  // Fallback for engines that do not emit boundary events: advance by elapsed
+  // time against the character count. Less accurate, but a reader following
+  // along is better served by an approximate highlight than none.
   function startFallback() {
     stopFallback();
     const started = performance.now();
     const chars = script.text.length;
-    const rate = Number(el("r-rate").value);
-    const charsPerMs = (15 * rate) / 1000; // ~15 chars/second at rate 1.0
+    const charsPerMs = (15 * Number(el("rate").value)) / 1000;
     fallbackTimer = setInterval(() => {
       if (!synth.speaking) return;
       const elapsed = performance.now() - started;
@@ -519,41 +677,48 @@
     stopFallback();
     if (synth) synth.cancel();
     utterance = null;
-    setButtons(false);
+    setSpeechButtons(false);
     clearMarks();
   }
 
-  function setButtons(speaking) {
-    el("r-play").disabled = !synth || !script?.text || speaking;
-    el("r-pause").disabled = !speaking;
-    el("r-stop").disabled = !speaking;
+  function setSpeechButtons(speaking) {
+    el("play").disabled = !synth || !script?.text || speaking;
+    el("pause").disabled = !speaking;
+    el("stop-reading").disabled = !speaking;
   }
 
-  el("start").addEventListener("click", () => start().catch((e) => alert(e.message)));
-  el("stop").addEventListener("click", stop);
-  // Both formats: the PDF keeps the page so a transcription can be checked
-  // against the original, the EPUB drops it so the text reflows for a screen
-  // reader or a phone.
-  el("pdf").addEventListener("click", () => {
-    if (sessionId) window.open(`/v1/sessions/${sessionId}/pdf`, "_blank");
+  // ------------------------------------------------------------------ wiring
+
+  function reportError(error) {
+    console.error(error);
+    alert(error.message);
+  }
+
+  el("create").addEventListener("click", () => createBook().catch(reportError));
+  el("new-title").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") createBook().catch(reportError);
   });
-  el("epub").addEventListener("click", () => {
-    if (sessionId) window.open(`/v1/sessions/${sessionId}/epub`, "_blank");
-  });
-  el("r-play").addEventListener("click", play);
-  el("r-pause").addEventListener("click", () => {
+  el("back").addEventListener("click", () => showLibrary().catch(reportError));
+  el("add-pages").addEventListener("click", () => startCamera().catch(reportError));
+  el("stop-camera").addEventListener("click", stopCamera);
+  el("pdf").addEventListener("click", () => window.open(`/v1/books/${book.id}/pdf`, "_blank"));
+  el("epub").addEventListener("click", () => window.open(`/v1/books/${book.id}/epub`, "_blank"));
+  el("play").addEventListener("click", play);
+  el("pause").addEventListener("click", () => {
     synth.pause();
-    setButtons(false);
-    el("r-play").disabled = false;
+    setSpeechButtons(false);
+    el("play").disabled = false;
   });
-  el("r-stop").addEventListener("click", () => {
+  el("stop-reading").addEventListener("click", () => {
     cancelSpeech();
-    el("r-spoken").textContent = "";
+    el("spoken").textContent = "";
   });
-  el("r-rate").addEventListener("input", (event) => {
-    el("r-rate-value").textContent = Number(event.target.value).toFixed(2) + "×";
+  el("rate").addEventListener("input", (event) => {
+    el("rate-value").textContent = Number(event.target.value).toFixed(2) + "×";
   });
 
-  // Voices arrive asynchronously in Chrome; nothing to do but note they landed.
+  // Voices arrive asynchronously in Chrome.
   if (synth) synth.addEventListener?.("voiceschanged", () => {});
+
+  showLibrary().catch(reportError);
 </script>

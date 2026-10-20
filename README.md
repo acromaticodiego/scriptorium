@@ -7,7 +7,7 @@ read aloud, with the highlight following the voice word by word.
 
 [![ci](https://github.com/acromaticodiego/scriptorium/actions/workflows/ci.yml/badge.svg)](https://github.com/acromaticodiego/scriptorium/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)
-![tests](https://img.shields.io/badge/tests-104-brightgreen)
+![tests](https://img.shields.io/badge/tests-114-brightgreen)
 ![CER](https://img.shields.io/badge/CER%20vs%20naive%20OCR-−97%25-brightgreen)
 [![license](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
@@ -81,7 +81,7 @@ No camera, no OCR engine, no sample photos needed — the repo ships a capture
 make install            # or: python -m venv .venv && pip install -e ".[api,dev]"
 make demo               # simulates curled, tilted, unevenly lit captures
                         # -> out/demo/demo.pdf
-make test               # 104 tests, no OCR binary required
+make test               # 114 tests, no OCR binary required
 ```
 
 For real recognition, add an engine — `make install-ocr` prints the one command for
@@ -317,25 +317,36 @@ Three things in that table are worth more than the headline:
 ## API
 
 ```
-POST   /v1/sessions                        open a book session
-POST   /v1/sessions/{id}/frames            push a frame -> capture state + any new page
-GET    /v1/sessions/{id}                   pages, confidences, timings
-GET    /v1/sessions/{id}/pages/{n}/script  read-aloud script: text + word boxes
-GET    /v1/sessions/{id}/pages/{n}/image   the dewarped page the boxes refer to
-GET    /v1/sessions/{id}/pdf               the assembled searchable PDF
-GET    /v1/sessions/{id}/epub              the same pages as reflowable EPUB 3
-DELETE /v1/sessions/{id}                   close
+POST   /v1/books                           create a book
+GET    /v1/books                           the library
+GET    /v1/books/{id}                      a book and its pages
+PATCH  /v1/books/{id}                      rename
+DELETE /v1/books/{id}                      delete it and its pages
+POST   /v1/books/{id}/frames               push a frame -> capture state + any new page
+POST   /v1/books/{id}/close                drop the in-memory capture state
+GET    /v1/books/{id}/pages/{n}/script     read-aloud script: text + word boxes
+GET    /v1/books/{id}/pages/{n}/image      the dewarped page the boxes refer to
+GET    /v1/books/{id}/pdf                  searchable PDF of the whole book
+GET    /v1/books/{id}/epub                 the same pages as reflowable EPUB 3
 POST   /v1/pages                           stateless: one photo -> queued job
 GET    /v1/jobs/{id}                       job status + result
-GET    /health                             engines available, sessions, queue depth
+GET    /health                             engines, books, queue depth
 ```
 
-Two client shapes, one pipeline: **stateless** for a mobile app or a batch
-digitisation script, **session** for a live capture where pages accumulate and dedup
-state has to persist. A session is the *book*, not the request.
+**The unit is the book**, not the request and not the session. A reader creates one,
+adds pages to it over however many sittings, and comes back to it later. That was
+not the first design: capture used to live in a session, which meant a book died
+with the server, nothing accumulated, and scanning one page and scanning three
+hundred were the same kind of thing — which is to say the product was a demo.
 
-Requests enqueue and return immediately — the API answers in milliseconds, OCR takes
-hundreds of them.
+Live capture state (the stability tracker, the dedup gate) stays in memory per open
+book, because it is only about the last few frames. It is rebuilt on demand and
+**seeded with the hashes of pages already stored**, so reopening a book does not
+re-capture the page still lying under the camera.
+
+`POST /v1/pages` remains for one-off recognition without keeping a book: a mobile
+app, a batch script. It enqueues and returns immediately — the API answers in
+milliseconds, OCR takes hundreds of them.
 
 ## Scaling
 
@@ -443,6 +454,7 @@ src/scriptorium/
   ocr/               engine interface + tesseract / paddle / dependency-free stub
   pipeline/          edge (per-frame) · worker (per-page) · book (session)
   export/            searchable PDF · EPUB · txt / md / json · reading script · voice
+  library/           books on disk: metadata, pages, images
   jobs/              queue protocol + in-process implementation
   api/               FastAPI app
   capture/           camera · video · image-folder sources

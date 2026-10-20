@@ -11,3 +11,4 @@ eval/runs/
 .ruff_cache/
 .env
 tessdata/
+data/
