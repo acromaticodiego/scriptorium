@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 import uuid
 from pathlib import Path
 
@@ -61,16 +62,42 @@ def _get_engine():
     return _engine
 
 
-_WEB_DIR = Path(__file__).resolve().parents[3] / "web"
-if _WEB_DIR.is_dir():
+def _find_web_dir() -> Path | None:
+    """Locate the browser client's static files.
+
+    Resolving this relative to `__file__` was wrong in the way that only shows up
+    once the package is no longer run from a checkout: in the container the code
+    lives in site-packages while `web/` sits in the working directory, so the
+    client silently was not served and `/` fell through to the API docs.
+
+    The order below holds in both cases -- an explicit override first, then the
+    working directory, then the checkout layout as a last resort.
+    """
+    override = os.environ.get("SCR_WEB_DIR")
+    candidates = [
+        Path(override) if override else None,
+        Path.cwd() / "web",
+        Path(__file__).resolve().parents[3] / "web",
+    ]
+    for candidate in candidates:
+        if candidate is not None and (candidate / "index.html").is_file():
+            return candidate
+    return None
+
+
+_WEB_DIR = _find_web_dir()
+if _WEB_DIR is not None:
     # Served from the same origin as the API so the browser client needs no CORS
-    # setup and getUserMedia works without a separate dev server.
+    # setup, and `getUserMedia` works because localhost counts as a secure
+    # context -- a camera page served from any other host would need HTTPS.
     app.mount("/app", StaticFiles(directory=str(_WEB_DIR), html=True), name="web")
+else:  # pragma: no cover - depends on deployment layout
+    log.warning("browser client not found; / will redirect to the API docs")
 
 
 @app.get("/", include_in_schema=False)
 def index() -> RedirectResponse:
-    return RedirectResponse(url="/app/" if _WEB_DIR.is_dir() else "/docs")
+    return RedirectResponse(url="/app/" if _WEB_DIR is not None else "/docs")
 
 
 @app.get("/health")
