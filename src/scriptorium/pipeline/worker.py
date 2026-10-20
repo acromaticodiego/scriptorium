@@ -56,7 +56,12 @@ class PageWorker:
 
         t0 = time.perf_counter()
         if self.cfg.split_spreads:
-            pages, spread_result = spread_mod.split_if_spread(image)
+            pages, spread_result = spread_mod.split_if_spread(
+                image,
+                self.cfg.spread_min_aspect,
+                self.cfg.spread_min_confidence,
+                self.cfg.spread_min_gutter_span,
+            )
         else:
             pages, spread_result = [image], spread_mod.SpreadSplit(False, None, 0.0, "disabled")
         timings["split_ms"] = (time.perf_counter() - t0) * 1000.0
