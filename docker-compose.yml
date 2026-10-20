@@ -9,7 +9,14 @@ services:
     environment:
       SCR_OCR_ENGINE: tesseract
       SCR_OCR_LANG: spa+eng
+      SCR_LIBRARY_DIR: /app/data/books
     volumes:
+      # The library, on the host. A book is meant to outlive the process that
+      # captured it, and a container is the shortest-lived process there is:
+      # without this mount the books would sit inside the container's writable
+      # layer and vanish on the next `up --build`, which would defeat the whole
+      # point of storing them.
+      - ./data:/app/data
       # Captures written by the CLI inside the container stay visible on the host.
       - ./out:/app/out
     restart: unless-stopped

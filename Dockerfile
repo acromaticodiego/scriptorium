@@ -35,9 +35,15 @@ COPY web ./web
 # should be inferring their location from the module path.
 ENV SCR_WEB_DIR=/app/web
 
-# Non-root: nothing here needs to write outside /tmp.
-RUN useradd --create-home --uid 10001 scriptorium
+# Non-root. The library is the one thing that *does* write, so its directory is
+# created and handed over before the switch: /app belongs to root, and a
+# bind-mounted host directory does not necessarily arrive writable for uid 10001.
+RUN useradd --create-home --uid 10001 scriptorium \
+    && mkdir -p /app/data/books /app/out \
+    && chown -R scriptorium:scriptorium /app/data /app/out
 USER scriptorium
+
+ENV SCR_LIBRARY_DIR=/app/data/books
 
 EXPOSE 8000
 
