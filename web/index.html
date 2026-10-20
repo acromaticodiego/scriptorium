@@ -104,7 +104,8 @@
       <video id="video" playsinline muted></video>
       <div class="controls">
         <button id="start" class="primary">Start session</button>
-        <button id="pdf" disabled>Download PDF</button>
+        <button id="pdf" disabled>PDF</button>
+        <button id="epub" disabled>EPUB</button>
         <button id="stop" disabled>Stop</button>
       </div>
       <div class="row" style="padding-bottom: 12px">
@@ -451,8 +452,14 @@
 
   el("start").addEventListener("click", () => start().catch((e) => alert(e.message)));
   el("stop").addEventListener("click", stop);
+  // Both formats: the PDF keeps the page so a transcription can be checked
+  // against the original, the EPUB drops it so the text reflows for a screen
+  // reader or a phone.
   el("pdf").addEventListener("click", () => {
     if (sessionId) window.open(`/v1/sessions/${sessionId}/pdf`, "_blank");
+  });
+  el("epub").addEventListener("click", () => {
+    if (sessionId) window.open(`/v1/sessions/${sessionId}/epub`, "_blank");
   });
   el("r-play").addEventListener("click", play);
   el("r-pause").addEventListener("click", () => {
