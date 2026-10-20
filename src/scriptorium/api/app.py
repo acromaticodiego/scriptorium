@@ -157,6 +157,12 @@ async def push_frame(session_id: str, file: UploadFile = File(...)) -> dict:
     return {
         "state": session.edge.state.value,
         "motion": round(session.edge.tracker.last_motion, 2),
+        # The detected page outline, in the pixel space of the frame just sent,
+        # so the client can draw it over its own preview and see what the
+        # detector sees. None means no page was found in this frame.
+        "quad": session.edge.last_quad,
+        "frame_size": session.edge.last_frame_size,
+        "rejection": list(session.edge.last_rejection),
         "captured_now": [_page_payload(page) for page in pages],
         "total_pages": len(session.pages),
     }

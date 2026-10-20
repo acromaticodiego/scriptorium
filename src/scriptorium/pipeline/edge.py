@@ -42,6 +42,10 @@ class EdgeLoop:
     # ("too dark", "hold still"), and the first thing to look at when a session
     # captures nothing.
     last_rejection: tuple[str, ...] = ()
+    # The page corners found in the last frame, in that frame's pixel space, and
+    # the size of that frame so a client can scale them to its own display.
+    last_quad: list[tuple[int, int]] | None = None
+    last_frame_size: tuple[int, int] = (0, 0)
 
     def __post_init__(self) -> None:
         if self.tracker is None:
@@ -59,8 +63,15 @@ class EdgeLoop:
 
         quad = detect.find_page(image, self.cfg.detect)
         page_found = quad is not None
+        # Published so a client can draw what the detector sees. Without it, "no
+        # page detected" is an opaque refusal: a reader cannot tell whether the
+        # page is too small in frame, too low-contrast against the surface, or
+        # being found somewhere unexpected.
+        self.last_quad = [(int(x), int(y)) for x, y in quad] if quad is not None else None
+        self.last_frame_size = (int(image.shape[1]), int(image.shape[0]))
         if not page_found:
             self.stats["no_page"] += 1
+            self.last_rejection = ("no_page",)
 
         if self.require_stability:
             fired = self.tracker.update(image, page_found)
@@ -94,6 +105,7 @@ class EdgeLoop:
             return None
 
         self.stats["captured"] += 1
+        self.last_rejection = ()
         candidate = PageCandidate(
             frame_index=index,
             timestamp=timestamp or time.time(),

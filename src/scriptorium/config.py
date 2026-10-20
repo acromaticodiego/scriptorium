@@ -73,7 +73,24 @@ class StabilityConfig:
 @dataclass
 class DetectConfig:
     # A page quad must cover at least this fraction of the frame to count.
+    #
+    # 0.12 of the *area*, which is about 35-40% of the frame's width and height.
+    # Below that there are too few pixels per character to recognise reliably,
+    # and in practice it means filling a good part of the viewfinder with the
+    # page rather than holding the book at arm's length from a wide-angle webcam.
     min_area_ratio: float = field(default_factory=lambda: _env_float("SCR_MIN_AREA", 0.12))
+    # ...and no more than this, which catches a failure that otherwise passes
+    # silently.
+    #
+    # When the paper and the surface under it are close in tone, the
+    # brightness fallback thresholds both as one blob and returns the whole
+    # frame as the "page". Measured on a light desk: 99.6% of the frame area,
+    # reported as a successful detection. Rectifying that warps the desk along
+    # with the page and hands the lot to OCR, so the run degrades instead of
+    # failing -- and a degraded result with no error is far harder to notice
+    # than a refusal. A genuine page photographed in full always leaves some
+    # border; a quad reaching the frame edges means the boundary was not found.
+    max_area_ratio: float = field(default_factory=lambda: _env_float("SCR_MAX_AREA", 0.92))
     # Rectified output height in pixels; width follows the detected aspect ratio.
     output_height: int = field(default_factory=lambda: _env_int("SCR_OUT_HEIGHT", 1600))
 

@@ -88,6 +88,37 @@ class TestDetect:
         rectified = detect.rectify(frame, quad)
         assert rectified.shape[0] > rectified.shape[1]
 
+    def test_a_quad_filling_the_frame_is_rejected(self):
+        """Refuse rather than degrade when the page boundary was not found.
+
+        On a surface close in tone to the paper, the brightness fallback
+        thresholds both as one blob and returns the entire frame as the "page" --
+        measured at 99.6% of the frame area, reported as success. Rectifying that
+        warps the desk in with the page and quietly hands the lot to OCR. A
+        degraded result with no error is much harder to notice than a refusal, so
+        a quad reaching the frame edges is treated as no detection.
+        """
+        page, _ = synth.render_page(_PAGE_TEXT)
+        # Paper on a desk only 17 grey levels away: almost no edge to find.
+        height, width = page.shape[:2]
+        frame = np.full((int(height / 0.7), int(width / 0.7), 3), 205, np.uint8)
+        offset_y = (frame.shape[0] - height) // 2
+        offset_x = (frame.shape[1] - width) // 2
+        frame[offset_y : offset_y + height, offset_x : offset_x + width] = page
+
+        quad = detect.find_page(frame)
+        if quad is not None:
+            area = cv2.contourArea(quad.astype(np.float32)) / (frame.shape[0] * frame.shape[1])
+            assert area <= 0.92, f"returned {area:.1%} of the frame as a page"
+
+    def test_a_page_too_small_in_frame_is_rejected(self):
+        """Too few pixels per character to recognise; better to say so."""
+        page, _ = synth.render_page(_PAGE_TEXT)
+        height, width = page.shape[:2]
+        frame = np.full((height * 4, width * 4, 3), 70, np.uint8)
+        frame[:height, :width] = page
+        assert detect.find_page(frame) is None
+
     def test_corner_ordering_is_rotation_stable(self):
         square = np.array([[10, 10], [110, 12], [112, 140], [8, 138]], dtype=np.float32)
         for shift in range(4):
