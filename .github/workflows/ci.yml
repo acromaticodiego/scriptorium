@@ -1,0 +1,72 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: System dependencies
+        # OpenCV links against these even headless; fonts-dejavu gives the
+        # synthetic page renderer a real typeface, without which it falls back to
+        # a bitmap font and the generated pages stop resembling print.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgl1 libglib2.0-0 fonts-dejavu-core
+
+      - name: Install
+        run: pip install -e ".[api,dev]" pypdf httpx
+
+      - name: Lint
+        run: ruff check src eval tests
+
+      - name: Tests
+        # The stub OCR engine means the full pipeline is exercised with no OCR
+        # binary installed; accuracy is measured by the ablation job below.
+        run: pytest -q
+
+  accuracy:
+    # Error rates need the real engine, so this job installs Tesseract and runs
+    # the ablation harness. It publishes the table as an artifact: a regression
+    # in CER shows up as a diff in a reviewable file, not as a silent drift.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: System dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            tesseract-ocr tesseract-ocr-spa tesseract-ocr-eng \
+            libgl1 libglib2.0-0 fonts-dejavu-core
+
+      - name: Install
+        run: pip install -e ".[tesseract,dev]"
+
+      - name: Ablation
+        run: python -m eval.run --pages 4 --difficulty all --save
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ablation-report
+          path: eval/runs/

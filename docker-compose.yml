@@ -1,0 +1,15 @@
+# Local stack. One service today, because the in-process queue is honest about
+# what it is: good for a single machine, and the seam (`jobs.base.JobQueue`) is
+# where a Redis broker and separate worker replicas slot in. See README, Scaling.
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      SCR_OCR_ENGINE: tesseract
+      SCR_OCR_LANG: spa+eng
+    volumes:
+      # Captures written by the CLI inside the container stay visible on the host.
+      - ./out:/app/out
+    restart: unless-stopped
