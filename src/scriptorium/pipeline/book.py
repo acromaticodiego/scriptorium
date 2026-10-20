@@ -23,6 +23,7 @@ import numpy as np
 
 from ..capture.source import Frame, FrameSource
 from ..config import Config
+from ..export import speech
 from ..ocr.base import OcrEngine
 from ..ocr.registry import get_engine
 from ..types import PageResult
@@ -86,7 +87,27 @@ class BookSession:
         self.edge.deduper.accept(
             event.candidate.phash, accepted[0].text if accepted else ""
         )
+        if accepted:
+            self._stitch_tail()
         return accepted
+
+    def _stitch_tail(self) -> None:
+        """Complete a word the previous page cut in half.
+
+        A page's text is only final once the *next* page exists: a word broken at
+        the bottom edge continues there, and until then there is nothing to join
+        it to. So the repair runs here, on the last two pages, each time a page
+        is added -- rather than at export time, so that a reader following along
+        live gets the corrected text too.
+        """
+        if len(self.pages) < 2:
+            return
+        previous, current = self.pages[-2], self.pages[-1]
+        repaired = speech.stitch_page_texts([previous.text, current.text])
+        if repaired[0] != previous.text:
+            previous.reading_text = repaired[0]
+            current.reading_text = repaired[1]
+            self.stats["pages_stitched"] += 1
 
     def run(self, source: FrameSource, max_pages: int | None = None) -> list[PageResult]:
         """Consume a whole source. Returns every page recognised."""
