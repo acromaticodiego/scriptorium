@@ -1,4 +1,5 @@
-.PHONY: install install-ocr test lint fix demo eval serve docker clean
+.PHONY: install install-ocr test lint fix demo eval serve clean \
+        docker docker-logs docker-stop docker-rebuild
 
 VENV ?= .venv
 PY   ?= $(VENV)/bin/python
@@ -39,8 +40,18 @@ eval:                  ## ablation table: needs a real OCR engine to mean anythi
 serve:                 ## API + browser client on http://127.0.0.1:8000
 	$(PY) -m scriptorium.cli serve
 
-docker:
-	docker compose up --build
+docker:                ## build and (re)launch the stack in the background
+	docker compose up -d --build
+
+docker-logs:           ## follow the container's output
+	docker compose logs -f
+
+docker-stop:           ## stop the stack; books on disk are untouched
+	docker compose down
+
+docker-rebuild:        ## full rebuild ignoring the layer cache (slow: re-installs Tesseract)
+	docker compose build --no-cache
+	docker compose up -d
 
 clean:
 	rm -rf out eval/runs .pytest_cache .ruff_cache
