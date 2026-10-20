@@ -332,6 +332,7 @@
     framesSent = 0;
     setState("searching", "camera off");
     renderPages();
+    ensureCameraLabels();
 
     if (pages.length) await openPage(pages[pages.length - 1].page_number);
     else clearReader();
@@ -416,30 +417,60 @@
     }
   }
 
-  async function listCameras() {
-    const select = el("camera");
-    let devices = [];
+  async function videoInputs() {
     try {
-      devices = (await navigator.mediaDevices.enumerateDevices()).filter(
+      return (await navigator.mediaDevices.enumerateDevices()).filter(
         (device) => device.kind === "videoinput",
       );
     } catch {
-      return;
+      return [];
     }
+  }
+
+  async function listCameras() {
+    const select = el("camera");
+    const devices = await videoInputs();
 
     const wanted = select.value || savedCamera();
     select.innerHTML = "";
     if (!devices.length) {
       select.append(new Option("no camera found", ""));
-      return;
+      el("camera-details").textContent = "";
+      return devices;
     }
 
     for (const [index, device] of devices.entries()) {
-      // Labels are empty until camera permission has been granted at least
-      // once, which is why the list is refreshed again after the stream opens.
       select.append(new Option(device.label || `Camera ${index + 1}`, device.deviceId));
     }
     if (devices.some((device) => device.deviceId === wanted)) select.value = wanted;
+    return devices;
+  }
+
+  // Make the picker usable before anything is captured.
+  async function ensureCameraLabels() {
+    const devices = await listCameras();
+    // Until the page holds camera permission, the browser withholds both the
+    // label *and* the deviceId of every camera: the list comes back the right
+    // length with every entry blank. A USB camera is then present but
+    // unnameable and unselectable, which reads as "my camera is missing".
+    //
+    // Opening a stream briefly and closing it is what unlocks the real names.
+    // It is done when the book opens rather than on page load, so the prompt
+    // arrives when the reader is about to scan and not when they are browsing
+    // the library.
+    if (devices.length && devices.every((device) => !device.label)) {
+      try {
+        const probe = await navigator.mediaDevices.getUserMedia({ video: true });
+        probe.getTracks().forEach((track) => track.stop());
+      } catch {
+        el("camera-details").textContent = "allow camera access to list cameras";
+        return;
+      }
+      await listCameras();
+    }
+    const named = await videoInputs();
+    el("camera-details").textContent =
+      named.length === 1 ? "1 camera" : `${named.length} cameras`;
   }
 
   async function startCamera() {
@@ -802,7 +833,16 @@
 
   function reportError(error) {
     console.error(error);
-    alert(error.message);
+    const explain = {
+      NotReadableError:
+        "That camera is already in use by another program. Close whatever has it " +
+        "open (another browser tab, Zoom, the Camera app) and try again.",
+      NotAllowedError:
+        "Camera access was denied. Allow it for this site and reload.",
+      NotFoundError: "That camera is no longer attached.",
+      OverconstrainedError: "That camera cannot provide the requested format.",
+    }[error.name];
+    alert(explain || error.message);
   }
 
   el("create").addEventListener("click", () => createBook().catch(reportError));
