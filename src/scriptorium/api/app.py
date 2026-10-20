@@ -31,6 +31,7 @@ from fastapi.staticfiles import StaticFiles
 
 from ..capture.source import Frame
 from ..config import Config
+from ..export import epub as epub_export
 from ..export import pdf as pdf_export
 from ..export import speech
 from ..jobs.memory import InMemoryQueue
@@ -197,6 +198,30 @@ def session_pdf(session_id: str) -> StreamingResponse:
         io.BytesIO(payload),
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{session_id}.pdf"'},
+    )
+
+
+@app.get("/v1/sessions/{session_id}/epub")
+def session_epub(session_id: str) -> Response:
+    """Reflowable text, for reading rather than for checking against the original."""
+    session = _require_session(session_id)
+    if not session.pages:
+        raise HTTPException(status_code=409, detail="session has no pages yet")
+
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = epub_export.write_epub(
+            session.pages,
+            Path(tmp) / "book.epub",
+            epub_export.EpubMetadata(title=session_id, language=Config().ocr_lang.split("+")[0]),
+        )
+        payload = path.read_bytes()
+
+    return Response(
+        content=payload,
+        media_type="application/epub+zip",
+        headers={"Content-Disposition": f'attachment; filename="{session_id}.epub"'},
     )
 
 

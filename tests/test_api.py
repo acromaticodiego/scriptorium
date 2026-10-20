@@ -103,6 +103,25 @@ def test_reading_a_missing_page_is_404(client, frame_bytes):
     assert client.get(f"/v1/sessions/{session_id}/pages/7/image").status_code == 404
 
 
+def test_epub_download(client, frame_bytes):
+    session_id = client.post("/v1/sessions").json()["session_id"]
+    for _ in range(8):
+        client.post(
+            f"/v1/sessions/{session_id}/frames",
+            files={"file": ("frame.jpg", frame_bytes, "image/jpeg")},
+        )
+
+    response = client.get(f"/v1/sessions/{session_id}/epub")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/epub+zip"
+    assert response.content[:2] == b"PK"  # a zip, as EPUB is
+
+
+def test_epub_before_any_page_is_a_conflict(client):
+    session_id = client.post("/v1/sessions").json()["session_id"]
+    assert client.get(f"/v1/sessions/{session_id}/epub").status_code == 409
+
+
 def test_pdf_before_any_page_is_a_conflict(client):
     session_id = client.post("/v1/sessions").json()["session_id"]
     assert client.get(f"/v1/sessions/{session_id}/pdf").status_code == 409

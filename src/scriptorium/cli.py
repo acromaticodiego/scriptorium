@@ -20,6 +20,7 @@ from pathlib import Path
 
 from .capture.source import Frame, open_source
 from .config import Config
+from .export import epub as epub_export
 from .export import pdf as pdf_export
 from .export import text as text_export
 from .ocr.registry import available_engines, diagnose, get_engine
@@ -124,6 +125,14 @@ def _scan(args) -> int:
 
     out = Path(args.out)
     pdf_path = pdf_export.write_pdf(session.pages, session.images, out / "book.pdf")
+    # Both formats, because they are good at opposite things: the PDF keeps the
+    # page so a transcription can be checked against the original, the EPUB
+    # drops it so the text actually reflows for a screen reader or a phone.
+    epub_export.write_epub(
+        session.pages,
+        out / "book.epub",
+        epub_export.EpubMetadata(title=out.name, language=args.lang.split("+")[0]),
+    )
     text_export.write_text(session.pages, out / "book.txt")
     text_export.write_markdown(session.pages, out / "book.md")
     text_export.write_json(session.pages, out / "book.json", summary=session.summary())
@@ -189,6 +198,7 @@ def _demo(args) -> int:
 
     out = Path(args.out)
     pdf_export.write_pdf(session.pages, session.images, out / "demo.pdf")
+    epub_export.write_epub(session.pages, out / "demo.epub")
     text_export.write_text(session.pages, out / "demo.txt")
     text_export.write_json(session.pages, out / "demo.json", summary=session.summary())
     (out / "ground_truth.txt").write_text("\n\n".join(truths), encoding="utf-8")
