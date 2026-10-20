@@ -446,9 +446,19 @@
   }
 
   const HINTS = {
-    no_page:
-      "No page detected. Fill more of the frame with the page — it needs roughly 40% of the " +
-      "width and height — and put the book on a surface that differs in tone from the paper.",
+    no_candidate:
+      "No page found. Put the book on a surface that differs in tone from the paper — " +
+      "a dark table or a dark folder underneath — so its edges stand out.",
+    page_too_small:
+      "The page is too small in frame. Move the camera closer: the page needs roughly 40% " +
+      "of the width and height.",
+    page_overflows_frame:
+      "The page runs off the edge of the frame. Move the camera back until all four corners " +
+      "are visible — the whole page has to be in shot to be flattened.",
+    page_fills_frame:
+      "The page outline reaches the frame edges, so its real corners are out of shot. " +
+      "Move the camera back a little.",
+    no_page: "No page detected.",
     blurry: "Out of focus — hold steadier, or move slightly further away.",
     too_dark: "Too dark for reliable recognition — add light.",
     too_bright: "Overexposed — reduce the light on the page.",

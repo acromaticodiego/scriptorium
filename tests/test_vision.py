@@ -416,3 +416,45 @@ class TestHandheldCapture:
         height, width = page.shape[:2]
         frame = page[: int(height * 0.95), : int(width * 0.95)].copy()
         assert detect.find_page(frame) is None
+
+
+class TestDetectionReasons:
+    """A refusal has to say which way to move the camera.
+
+    "No page detected" is not actionable. A page too small in frame and a page
+    running off its edges need opposite corrections, and telling a reader to fill
+    more of the frame when the page already overflows it is worse than silence --
+    it sends them further from a working shot.
+    """
+
+    def test_a_page_too_small_says_so(self):
+        page, _ = synth.render_page(_PAGE_TEXT)
+        height, width = page.shape[:2]
+        frame = np.full((height * 4, width * 4, 3), 70, np.uint8)
+        frame[:height, :width] = page
+
+        result = detect.locate(frame)
+        assert not result.found
+        assert result.reason == detect.TOO_SMALL
+
+    def test_a_page_running_off_the_frame_says_so(self):
+        page, _ = synth.render_page(_PAGE_TEXT)
+        height, width = page.shape[:2]
+        cropped = page[: int(height * 0.95), : int(width * 0.95)].copy()
+
+        result = detect.locate(cropped)
+        assert not result.found
+        assert result.reason in {detect.OVERFLOWS, detect.FILLS_FRAME}
+
+    def test_a_well_framed_page_is_found_with_no_complaint(self, scene):
+        frame, _ = scene
+        result = detect.locate(frame)
+        assert result.found
+        assert result.reason == ""
+
+    def test_every_reason_is_a_known_one(self, scene):
+        """The client maps these to instructions, so an unmapped one shows raw."""
+        known = {detect.NO_CANDIDATE, detect.TOO_SMALL, detect.FILLS_FRAME, detect.OVERFLOWS, ""}
+        blank = np.full((400, 600, 3), 128, np.uint8)
+        for image in (blank, scene[0]):
+            assert detect.locate(image).reason in known
