@@ -11,6 +11,7 @@ the extra problem of having to reconcile 30 slightly different transcriptions.
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field
 
 import cv2
@@ -42,13 +43,39 @@ class StabilityTracker:
     _prev: np.ndarray | None = field(default=None, repr=False)
     _still_streak: int = 0
     _captured_hash: str | None = field(default=None, repr=False)
+    _recent: deque[float] = field(default_factory=lambda: deque(maxlen=30), repr=False)
 
     def reset(self) -> None:
         self.state = TurnState.SEARCHING
         self._prev = None
         self._still_streak = 0
         self._captured_hash = None
+        self._recent.clear()
         self.last_motion = 0.0
+
+    def still_bar(self) -> float:
+        """How little movement counts as "still", for *this* camera right now.
+
+        A fixed threshold silently assumes a noise floor. A camera on a stand
+        reads about 0.5 on the motion metric; the same scene held in a hand never
+        drops below roughly 3.5, because a hand is never still and the sensor is
+        still adjusting exposure. A bar of 2.5 -- which is what the synthetic
+        static captures suggested -- therefore means a handheld session is never
+        still, never settles, and captures exactly once and then nothing, with
+        the badge reporting "hold still" forever while the reader does.
+
+        What matters is not absolute motion but whether the camera is as still as
+        it is going to get, so the bar is drawn from the quietest moment in the
+        recent past. On a stand the baseline is near zero and the configured
+        floor applies unchanged; in a hand it rises to match.
+
+        Capturing a slightly-moving frame is a safe failure here, because blur is
+        measured separately on the rectified page and rejected there.
+        """
+        if not self._recent:
+            return self.cfg.motion_threshold
+        baseline = min(self._recent)
+        return max(self.cfg.motion_threshold, baseline * self.cfg.motion_tolerance)
 
     def update(self, image: np.ndarray, page_found: bool) -> bool:
         """Advance the machine by one frame. Returns True on a capture edge."""
@@ -60,10 +87,12 @@ class StabilityTracker:
             self._still_streak = 0
             return False
 
-        still = motion <= self.cfg.motion_threshold
+        still_bar = self.still_bar()
+        still = motion <= still_bar
 
         if self.state is TurnState.CAPTURED:
-            if motion >= self.cfg.turn_threshold or self._content_changed(image):
+            turn_bar = max(self.cfg.turn_threshold, still_bar * 1.5)
+            if motion >= turn_bar or self._content_changed(image):
                 self.state = TurnState.MOVING
                 self._still_streak = 0
                 self._captured_hash = None
@@ -129,4 +158,6 @@ class StabilityTracker:
             return float("inf")  # first frame: no reference, treat as motion
         diff = cv2.absdiff(small, self._prev)
         self._prev = small
-        return float(diff.mean())
+        value = float(diff.mean())
+        self._recent.append(value)
+        return value

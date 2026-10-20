@@ -92,6 +92,37 @@ def _plausible_area(quad: np.ndarray, frame_area: float, cfg: DetectConfig) -> b
     return cfg.min_area_ratio <= ratio <= cfg.max_area_ratio
 
 
+def _corners_inside(quad: np.ndarray, width: int, height: int, cfg: DetectConfig) -> bool:
+    """Are the page's corners actually in the picture?
+
+    This is a precondition for rectification, not a heuristic about what pages
+    look like. The perspective transform maps four corners to a rectangle; if a
+    corner sits on the frame boundary then the real corner is somewhere outside
+    the image, the transform is fitted to a point that is not the corner, and the
+    result is a warp of whatever happened to be at the edge.
+
+    That failure is not subtle when you see it -- a diagonal smear of the book's
+    edge with a black wedge where the transform sampled outside the frame -- but
+    nothing upstream reports it, so the junk gets stored as a page.
+
+    A page overflowing one edge is tolerated: a reader framing tightly will clip
+    a margin, and the other three corners still pin the transform. Two or more is
+    not recoverable.
+    """
+    margin_x = width * cfg.edge_margin_ratio
+    margin_y = height * cfg.edge_margin_ratio
+    xs, ys = quad[:, 0], quad[:, 1]
+    touching = sum(
+        [
+            bool(xs.min() <= margin_x),
+            bool(xs.max() >= width - margin_x),
+            bool(ys.min() <= margin_y),
+            bool(ys.max() >= height - margin_y),
+        ]
+    )
+    return touching <= 1
+
+
 def _find_by_edges(work: np.ndarray, frame_area: float, cfg: DetectConfig) -> Quad | None:
     median = float(np.median(work))
     lower = int(max(0, 0.66 * median))
@@ -107,6 +138,8 @@ def _find_by_edges(work: np.ndarray, frame_area: float, cfg: DetectConfig) -> Qu
             continue
         candidate = approx.reshape(4, 2).astype(np.float32)
         if not _plausible_area(candidate, frame_area, cfg):
+            continue
+        if not _corners_inside(candidate, work.shape[1], work.shape[0], cfg):
             continue
         return candidate
     return None
@@ -124,5 +157,7 @@ def _find_by_brightness(work: np.ndarray, frame_area: float, cfg: DetectConfig) 
     # The area check goes on the *box*, not the contour: minAreaRect can inflate
     # a ragged contour considerably, and it is the box that gets rectified.
     if not _plausible_area(box, frame_area, cfg):
+        return None
+    if not _corners_inside(box, work.shape[1], work.shape[0], cfg):
         return None
     return box

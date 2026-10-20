@@ -69,7 +69,13 @@ class EdgeLoop:
         # being found somewhere unexpected.
         self.last_quad = [(int(x), int(y)) for x, y in quad] if quad is not None else None
         self.last_frame_size = (int(image.shape[1]), int(image.shape[0]))
-        if not page_found:
+        if page_found:
+            # Clear as soon as a page is seen again, not only on a capture: the
+            # reason was being shown long after it stopped being true, so the
+            # client told a reader "no page detected" while drawing the outline
+            # of the page it had just found.
+            self.last_rejection = ()
+        else:
             self.stats["no_page"] += 1
             self.last_rejection = ("no_page",)
 

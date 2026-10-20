@@ -55,8 +55,15 @@ class QualityConfig:
 
 @dataclass
 class StabilityConfig:
-    # Mean absolute frame difference below which we call the scene still.
+    # Mean absolute frame difference below which the scene is always considered
+    # still. This is a *floor*, not the whole rule: see
+    # `StabilityTracker.still_bar`, which raises the bar to match how still the
+    # camera in use actually gets. A tripod reads ~0.5 on this metric and a
+    # handheld camera never drops below ~3.5, so a single fixed number means one
+    # of the two can never settle.
     motion_threshold: float = field(default_factory=lambda: _env_float("SCR_MOTION_THRESH", 2.5))
+    # How far above the quietest recent frame still counts as still.
+    motion_tolerance: float = field(default_factory=lambda: _env_float("SCR_MOTION_TOL", 1.6))
     # Consecutive still frames required before we trust it (debounce).
     settle_frames: int = field(default_factory=lambda: _env_int("SCR_SETTLE_FRAMES", 4))
     # Motion above this after a capture means the page may have changed.
@@ -102,6 +109,11 @@ class DetectConfig:
     # than a refusal. A genuine page photographed in full always leaves some
     # border; a quad reaching the frame edges means the boundary was not found.
     max_area_ratio: float = field(default_factory=lambda: _env_float("SCR_MAX_AREA", 0.92))
+    # How close to the frame border a corner may sit before it is assumed to be
+    # the *frame's* corner rather than the page's. See
+    # `vision.detect._corners_inside`: rectification needs the real corners in
+    # the picture, so this is a precondition, not a preference.
+    edge_margin_ratio: float = field(default_factory=lambda: _env_float("SCR_EDGE_MARGIN", 0.015))
     # Rectified output height in pixels; width follows the detected aspect ratio.
     output_height: int = field(default_factory=lambda: _env_int("SCR_OUT_HEIGHT", 1600))
 
@@ -201,6 +213,10 @@ class Config:
     dewarp: DewarpConfig = field(default_factory=DewarpConfig)
     dedup: DedupConfig = field(default_factory=DedupConfig)
     split_spreads: bool = True
+    # Discard captures the engine found no words in. They are what a failed
+    # detection produces, and storing them fills a book with artefacts that
+    # nothing downstream can tell apart from real pages.
+    require_text: bool = True
     ocr_engine: str = field(default_factory=lambda: os.environ.get("SCR_OCR_ENGINE", "auto"))
     ocr_lang: str = field(default_factory=lambda: os.environ.get("SCR_OCR_LANG", "spa+eng"))
 

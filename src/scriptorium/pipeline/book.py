@@ -71,6 +71,15 @@ class BookSession:
 
         accepted: list[PageResult] = []
         for result, image in zip(output.results, output.images, strict=True):
+            if self.cfg.require_text and not result.ocr.lines:
+                # A capture the engine found no words in is not a page of a book.
+                # It is what a failed detection produces -- a warp of the desk, or
+                # of the book's edge -- and storing it puts junk in the library
+                # with nothing to mark it as junk. A genuinely blank page is rare
+                # and can be rescanned; a silently stored artefact cannot even be
+                # noticed.
+                self.stats["rejected_no_text"] += 1
+                continue
             if self.edge.deduper.is_duplicate_text(result.text):
                 self.stats["rejected_duplicate_text"] += 1
                 continue

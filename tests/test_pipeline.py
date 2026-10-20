@@ -139,3 +139,31 @@ def _fake_candidate():
         quality=QualityReport(500.0, 200.0, 0.0, 0.0, True),
         phash="0" * 16,
     )
+
+
+def test_a_capture_with_no_text_is_not_stored(scene):
+    """A failed detection produces a warp of the desk, not a page.
+
+    Storing it puts an artefact in the book that nothing downstream can tell
+    apart from a real page -- it was observed in a session as "page 1, conf 0%,
+    no text recognised". A genuinely blank page is rare and can be rescanned; a
+    silently stored artefact cannot even be noticed.
+    """
+
+    class _Silent:
+        """An engine that recognises nothing, as happens on a junk capture."""
+
+        name = "silent"
+
+        def run(self, image):
+            from scriptorium.types import OcrPage
+
+            return OcrPage(lines=[], width=image.shape[1], height=image.shape[0], engine=self.name)
+
+    frame, _ = scene
+    session = BookSession(engine=_Silent())
+    session.edge.require_stability = False
+    session.feed(Frame(0, 0.0, frame))
+
+    assert session.pages == []
+    assert session.stats["rejected_no_text"] == 1
