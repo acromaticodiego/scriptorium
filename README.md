@@ -7,7 +7,7 @@ read aloud, with the highlight following the voice word by word.
 
 [![ci](https://github.com/acromaticodiego/scriptorium/actions/workflows/ci.yml/badge.svg)](https://github.com/acromaticodiego/scriptorium/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)
-![tests](https://img.shields.io/badge/tests-83-brightgreen)
+![tests](https://img.shields.io/badge/tests-97-brightgreen)
 ![CER](https://img.shields.io/badge/CER%20vs%20naive%20OCR-−97%25-brightgreen)
 [![license](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
@@ -81,7 +81,7 @@ No camera, no OCR engine, no sample photos needed — the repo ships a capture
 make install            # or: python -m venv .venv && pip install -e ".[api,dev]"
 make demo               # simulates curled, tilted, unevenly lit captures
                         # -> out/demo/demo.pdf
-make test               # 83 tests, no OCR binary required
+make test               # 97 tests, no OCR binary required
 ```
 
 For real recognition, add an engine — `make install-ocr` prints the one command for
@@ -323,6 +323,7 @@ GET    /v1/sessions/{id}                   pages, confidences, timings
 GET    /v1/sessions/{id}/pages/{n}/script  read-aloud script: text + word boxes
 GET    /v1/sessions/{id}/pages/{n}/image   the dewarped page the boxes refer to
 GET    /v1/sessions/{id}/pdf               the assembled searchable PDF
+GET    /v1/sessions/{id}/epub              the same pages as reflowable EPUB 3
 DELETE /v1/sessions/{id}                   close
 POST   /v1/pages                           stateless: one photo -> queued job
 GET    /v1/jobs/{id}                       job status + result
@@ -396,12 +397,42 @@ A 98% reduction of what was left — the unrepaired text claims words like
 `PageResult.text` and reaches the txt, Markdown and JSON exports too, not only the
 speech path.
 
-## Why the PDF carries a text layer
+### Words cut by a page break
 
-An image-only PDF is completely opaque to a screen reader. With an *invisible but
-selectable* text layer sitting on the matching pixels, the page is readable by
-assistive technology, searchable, and still checkable against the original — a
-reader can verify the transcription instead of trusting it.
+A word hyphenated at the bottom of a page continues on the *next* one, which
+neither of the repairs above can see: when a page is recognised, the next may not
+have been captured yet. So that join happens once the pages exist together —
+incrementally, as each page arrives, so a reader following along live gets the
+corrected text rather than only the final export.
+
+The completed word is placed on the page where it *starts* and removed from the
+next, which keeps every page independently usable: a Markdown section, an EPUB
+document, one page read aloud.
+
+## Two output formats, good at opposite things
+
+Every scan writes both, because the trade runs in opposite directions.
+
+**The searchable PDF** keeps the page. The text layer is invisible but selectable,
+sitting exactly on the matching pixels, which is what makes the result
+verifiable: a reader can check the transcription against the original instead of
+trusting it. An image-only PDF, by contrast, is completely opaque to a screen
+reader.
+
+**The EPUB** throws the page away, and that is the point. Fixed layout is the
+enemy of actually reading: a screen reader has to infer order from coordinates, a
+phone cannot reflow a fixed page, and nobody can change the type size. EPUB 3 is
+a document instead — it reflows, it scales, it reads in order. Written with the
+standard library's `zipfile` and nothing else.
+
+Reflow only works if the text is in paragraphs, though, and OCR gives lines. One
+`<p>` per line destroys reflow; one `<p>` per page destroys the structure. The
+signal that separates them turns out to be in the word boxes: **justified body
+text reaches the measure on every line except a paragraph's last one**, so a line
+whose right edge falls short of the widest line on the page closes a paragraph.
+On a rendered page with three paragraphs, 11 OCR lines come back as 3. It is a
+heuristic — wrong on headings, on unjustified text, and on the last line of a
+page — and proper layout analysis is still on the roadmap.
 
 ## Layout
 
@@ -411,7 +442,7 @@ src/scriptorium/
   vision/            quality · detect · stability · dewarp · spread · dedup
   ocr/               engine interface + tesseract / paddle / dependency-free stub
   pipeline/          edge (per-frame) · worker (per-page) · book (session)
-  export/            searchable PDF · txt / md / json · reading script · voice
+  export/            searchable PDF · EPUB · txt / md / json · reading script · voice
   jobs/              queue protocol + in-process implementation
   api/               FastAPI app
   capture/           camera · video · image-folder sources
@@ -427,10 +458,12 @@ web/index.html       browser client, streams webcam frames to the API
 - [ ] Error rates on **real** captures (`--real-dir`) to sit beside the synthetic ones
 - [ ] Compare PaddleOCR against Tesseract on identical frames
 - [x] Read-aloud mode with word-level highlighting, in the browser and headless
-- [ ] Join a word split across a *page* break, not only a line break
-      (`ReadingScript.ends_mid_word` already flags it; the join needs both pages)
-- [ ] EPUB export with reflowable text
-- [ ] Layout analysis: multi-column, footnotes, page numbers, reading order
+- [x] Join a word split across a *page* break, not only a line break
+- [x] EPUB export with reflowable text and paragraph recovery
+- [ ] Layout analysis: multi-column, footnotes, reading order — the paragraph
+      heuristic in the EPUB exporter is the cheap stand-in for it
+- [ ] Speak a page-edge fragment as the completed word, not the fragment
+      (the text is already joined; the spoken script still reads per page)
 - [ ] Handwriting via a fine-tuned TrOCR, behind the same `OcrEngine` interface
 - [ ] Redis queue + shared session storage for multi-replica deployment
 - [ ] On-device edge loop (the per-frame stages are already cheap enough for a phone)
