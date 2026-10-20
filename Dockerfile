@@ -30,6 +30,11 @@ RUN pip install ".[api,tesseract]"
 COPY eval ./eval
 COPY web ./web
 
+# Point the app at the client explicitly. The package is installed into
+# site-packages while these assets stay in the working directory, so nothing
+# should be inferring their location from the module path.
+ENV SCR_WEB_DIR=/app/web
+
 # Non-root: nothing here needs to write outside /tmp.
 RUN useradd --create-home --uid 10001 scriptorium
 USER scriptorium
