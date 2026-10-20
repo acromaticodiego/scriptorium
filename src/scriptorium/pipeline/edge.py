@@ -61,8 +61,9 @@ class EdgeLoop:
         """Handle one frame. Returns a capture event at most once per page."""
         self.stats["frames"] += 1
 
-        quad = detect.find_page(image, self.cfg.detect)
-        page_found = quad is not None
+        found = detect.locate(image, self.cfg.detect)
+        quad = found.quad
+        page_found = found.found
         # Published so a client can draw what the detector sees. Without it, "no
         # page detected" is an opaque refusal: a reader cannot tell whether the
         # page is too small in frame, too low-contrast against the surface, or
@@ -77,7 +78,11 @@ class EdgeLoop:
             self.last_rejection = ()
         else:
             self.stats["no_page"] += 1
-            self.last_rejection = ("no_page",)
+            self.stats["detect_" + found.reason] += 1
+            # The specific reason, not a generic refusal: a page too small and a
+            # page running off the edges need opposite corrections from whoever
+            # is holding the camera.
+            self.last_rejection = (found.reason,)
 
         if self.require_stability:
             fired = self.tracker.update(image, page_found)
