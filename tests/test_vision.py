@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
+import pytest
 
 from eval import synth
 from scriptorium.config import DedupConfig, StabilityConfig
@@ -361,3 +362,57 @@ def _line_centres(band: np.ndarray) -> list[float]:
     if start is not None:
         centres.append((start + len(inside) - 1) / 2.0)
     return centres
+
+
+class TestHandheldCapture:
+    """The failures a real handheld session hits, which synthetic frames do not."""
+
+    def test_a_handheld_camera_can_still_settle(self):
+        """A fixed stillness bar means a hand never settles and nothing captures.
+
+        A camera on a stand reads about 0.5 on the motion metric; the same scene
+        in a hand sits around 3.5, above the configured floor of 2.5. Observed in
+        a real session: 746 frames sent, one page captured, the badge reading
+        "hold still" the whole time while the reader did exactly that.
+        """
+        from scriptorium.vision.stability import StabilityTracker
+
+        rng = np.random.default_rng(0)
+        scene = rng.integers(60, 200, (480, 640), dtype=np.int16)
+        tracker = StabilityTracker()
+
+        fires = 0
+        for _ in range(40):
+            shaky = np.clip(scene + rng.normal(0, 9, scene.shape), 0, 255).astype(np.uint8)
+            fires += bool(tracker.update(shaky, page_found=True))
+
+        assert tracker.still_bar() > StabilityConfig().motion_threshold
+        assert fires >= 1, "a handheld camera never settled, so nothing was ever captured"
+
+    def test_a_steady_camera_keeps_the_strict_bar(self):
+        """Adapting upwards must not loosen the bar for a camera that is still."""
+        from scriptorium.vision.stability import StabilityTracker
+
+        rng = np.random.default_rng(1)
+        scene = rng.integers(60, 200, (480, 640), dtype=np.int16)
+        tracker = StabilityTracker()
+        for _ in range(40):
+            quiet = np.clip(scene + rng.normal(0, 0.6, scene.shape), 0, 255).astype(np.uint8)
+            tracker.update(quiet, page_found=True)
+
+        assert tracker.still_bar() == pytest.approx(StabilityConfig().motion_threshold)
+
+    def test_a_quad_running_off_the_frame_is_refused(self):
+        """Rectification needs the real corners in the picture.
+
+        When the detector latches onto the background instead of the page, the
+        corners sit on the frame boundary, the transform is fitted to points that
+        are not the page's corners, and the output is a diagonal smear with a
+        black wedge where it sampled outside the image. Nothing downstream
+        reports that, so the junk is stored as a page.
+        """
+        page, _ = synth.render_page(_PAGE_TEXT)
+        # The page bleeds past three edges: only a crop of it is in frame.
+        height, width = page.shape[:2]
+        frame = page[: int(height * 0.95), : int(width * 0.95)].copy()
+        assert detect.find_page(frame) is None
