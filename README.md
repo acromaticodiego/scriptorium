@@ -7,7 +7,7 @@ read aloud, with the highlight following the voice word by word.
 
 [![ci](https://github.com/acromaticodiego/scriptorium/actions/workflows/ci.yml/badge.svg)](https://github.com/acromaticodiego/scriptorium/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)
-![tests](https://img.shields.io/badge/tests-75-brightgreen)
+![tests](https://img.shields.io/badge/tests-83-brightgreen)
 ![CER](https://img.shields.io/badge/CER%20vs%20naive%20OCR-−97%25-brightgreen)
 [![license](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
@@ -81,13 +81,20 @@ No camera, no OCR engine, no sample photos needed — the repo ships a capture
 make install            # or: python -m venv .venv && pip install -e ".[api,dev]"
 make demo               # simulates curled, tilted, unevenly lit captures
                         # -> out/demo/demo.pdf
-make test               # 75 tests, no OCR binary required
+make test               # 83 tests, no OCR binary required
 ```
 
 For real recognition, add an engine — `make install-ocr` prints the one command for
 your OS, and `scriptorium doctor` tells you what is actually usable, including
-*which languages* are installed (the Windows installer ships English only, which
-is the failure you hit when scanning Spanish). Then:
+*which languages* are installed.
+
+That last part matters more than it sounds. Language models are a separate
+download from the binary (the Windows installer ships English only), and a
+missing model fails *silently*: engine selection falls through to the stub and
+the run succeeds, producing placeholder text. So drop the `.traineddata` files
+you need into a `tessdata/` folder in the project and they are picked up
+automatically — no environment variable to remember, and `doctor` lists exactly
+which languages it found. Then:
 
 ```bash
 scriptorium scan 0 --out out/session      # live webcam
