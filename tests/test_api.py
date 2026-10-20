@@ -6,6 +6,8 @@ Deliberately thin: they check the shape of the contract a client depends on
 
 from __future__ import annotations
 
+import time
+
 import cv2
 import pytest
 
@@ -134,10 +136,12 @@ def test_stateless_page_endpoint_queues_a_job(client, frame_bytes):
     assert response.status_code == 202
     job_id = response.json()["id"]
 
-    for _ in range(100):
-        job = client.get(f"/v1/jobs/{job_id}").json()
-        if job["state"] in {"done", "failed"}:
-            break
+    # Wait on a deadline, not on an iteration count. A fixed number of polls is a
+    # race: the requests are far quicker than the ~100 ms the worker needs for a
+    # page, so a loaded CI runner can exhaust the loop before the job finishes --
+    # which is exactly how this test failed intermittently on one Python version
+    # and not the others.
+    job = _await_job(client, job_id)
     assert job["state"] == "done", job.get("error")
     assert job["result"]["summary"]["pages"] == 1
 
@@ -151,3 +155,13 @@ def test_bad_image_is_rejected(client):
 
 def test_unknown_session(client):
     assert client.get("/v1/sessions/nope").status_code == 404
+
+
+def _await_job(client, job_id: str, timeout: float = 30.0) -> dict:
+    """Poll a queued job until it settles, or give up after `timeout` seconds."""
+    deadline = time.monotonic() + timeout
+    while True:
+        job = client.get(f"/v1/jobs/{job_id}").json()
+        if job["state"] in {"done", "failed"} or time.monotonic() > deadline:
+            return job
+        time.sleep(0.05)

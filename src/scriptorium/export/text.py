@@ -13,6 +13,19 @@ from pathlib import Path
 
 from ..types import PageResult
 
+# Marker written into a draft ground-truth file, and the reason it exists.
+#
+# Measuring accuracy on real photographs needs a human transcription to compare
+# against, and typing a page from scratch is slow enough that it does not get
+# done. Seeding the file with the pipeline's own output and correcting it is far
+# faster -- and quietly circular if anyone forgets to correct it, because the
+# hypothesis would then be scored against itself and return a perfect result.
+#
+# So a draft is marked, and the eval harness refuses to score a file still
+# carrying the marker. Deleting the line is the act of claiming the file was
+# reviewed, which is a thing a person has to do on purpose.
+UNREVIEWED_MARKER = "# UNREVIEWED: correct the text below, then delete this line"
+
 
 def write_text(pages: list[PageResult], path: str | Path, separator: str = "\n\n") -> Path:
     out = Path(path)
@@ -57,3 +70,26 @@ def write_json(pages: list[PageResult], path: str | Path, summary: dict | None =
     }
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return out
+
+
+def write_draft_truth(text: str, path: str | Path) -> Path:
+    """Write a ground-truth draft seeded with recognised text, marked unreviewed.
+
+    Never overwrites: a file already on disk may be a transcription someone
+    corrected by hand, and regenerating drafts must not be able to destroy that
+    work.
+    """
+    out = Path(path)
+    if out.exists():
+        return out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(f"{UNREVIEWED_MARKER}\n{text}\n", encoding="utf-8")
+    return out
+
+
+def read_reviewed_truth(path: str | Path) -> str | None:
+    """Return a reviewed transcription, or None if it still carries the marker."""
+    content = Path(path).read_text(encoding="utf-8")
+    if UNREVIEWED_MARKER in content:
+        return None
+    return content.strip()
