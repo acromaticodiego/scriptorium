@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+out/
+samples/*.jpg
+samples/*.png
+samples/*.mp4
+eval/runs/
+.pytest_cache/
+.ruff_cache/
+.env
+tessdata/

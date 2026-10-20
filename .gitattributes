@@ -1,0 +1,13 @@
+# Normalise line endings in the repository to LF regardless of the OS a
+# contributor works on. Without this, a Makefile or shell script committed from
+# Windows carries CRLF and fails on the Linux runners the CI uses.
+* text=auto eol=lf
+
+# Binary assets: never touch these.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.pdf binary
+*.mp4 binary
+*.traineddata binary

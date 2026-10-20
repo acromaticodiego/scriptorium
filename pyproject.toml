@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scriptorium"
+version = "0.1.0"
+description = "Contactless book digitization and reading aid: camera -> searchable PDF / spoken text"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "opencv-python>=4.8",
+    "pillow>=10.0",
+    "reportlab>=4.0",
+]
+
+[project.optional-dependencies]
+api = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "python-multipart>=0.0.9"]
+tesseract = ["pytesseract>=0.3.10"]
+paddle = ["paddleocr>=2.7", "paddlepaddle>=2.6"]
+redis = ["redis>=5.0"]
+tts = ["pyttsx3>=2.90"]
+dev = ["pytest>=8.0", "ruff>=0.4"]
+
+[project.scripts]
+scriptorium = "scriptorium.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "RUF", "FURB", "SIM"]
+# B008: FastAPI's dependency injection is *expressed* as a call in the default
+# (`file: UploadFile = File(...)`). It is the framework's documented idiom, not
+# the mutable-default bug the rule is looking for.
+ignore = ["B008"]
