@@ -84,6 +84,15 @@ class Deduplicator:
             text_similarity(text, seen) >= self.cfg.min_text_similarity for seen in self._texts
         )
 
+    def seed(self, hashes: list[str]) -> None:
+        """Prime the gate with pages already stored.
+
+        Reopening a book to add more pages starts a fresh session, and the page
+        still lying under the camera is one it has never seen. Without the
+        stored hashes it would be captured again as a duplicate of nothing.
+        """
+        self._hashes.extend(hashes)
+
     def accept(self, phash: str, text: str = "") -> None:
         self._hashes.append(phash)
         if text:

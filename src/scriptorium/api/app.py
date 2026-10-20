@@ -1,19 +1,21 @@
-"""HTTP API.
+"""HTTP API, organised around books.
 
-Two shapes of client, one pipeline:
+The unit is the **book**, not the request and not the session. A reader creates
+one, adds pages to it over however many sittings, and comes back to it later;
+the library on disk is what makes that possible (see `library.store`).
 
-* **stateless** -- `POST /v1/pages` with a single photo, get the text back. This is
-  the integration surface: a mobile app, a batch digitisation script, a cron job.
-* **session** -- `POST /v1/sessions`, then stream frames to
-  `POST /v1/sessions/{id}/frames`. The server runs the edge loop and answers with
-  the capture state, so a browser client can show "hold still / captured /
-  turn the page" without shipping the vision code to the client.
+Live capture state -- the stability tracker, the dedup gate -- lives in memory
+per open book, because it is about the last few frames and nothing else. It is
+rebuilt on demand and seeded with the hashes of pages already stored, so
+reopening a book does not re-capture the page still lying under the camera.
 
-A session is the *book*, not the request: pages accumulate, dedup state persists,
-and the PDF is assembled at the end.
+There is also a stateless `POST /v1/pages` for one-off recognition: a mobile
+app, a batch script, anything wanting text out of a photograph without keeping
+a book.
 
-Sessions live in process memory here. That is the one piece which has to move to
-shared storage before running more than one replica -- see README, Scaling.
+Sessions were the earlier model and were the wrong unit: a book died with the
+server, nothing accumulated, and scanning one page and scanning three hundred
+were the same kind of thing.
 """
 
 from __future__ import annotations
@@ -21,12 +23,13 @@ from __future__ import annotations
 import io
 import logging
 import os
+import tempfile
 import uuid
 from pathlib import Path
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, File, HTTPException, Response, UploadFile
+from fastapi import Body, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -36,6 +39,7 @@ from ..export import epub as epub_export
 from ..export import pdf as pdf_export
 from ..export import speech
 from ..jobs.memory import InMemoryQueue
+from ..library import BookNotFound, Library, default_library
 from ..ocr.registry import available_engines, get_engine
 from ..pipeline.book import BookSession
 from ..types import PageResult
@@ -44,13 +48,21 @@ log = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Scriptorium",
-    version="0.1.0",
-    description="Contactless book digitisation: camera frames in, searchable PDF out.",
+    version="0.2.0",
+    description="Contactless book digitisation: a camera, a library of books, read aloud.",
 )
 
 _queue = InMemoryQueue(workers=2)
-_sessions: dict[str, BookSession] = {}
+_captures: dict[str, BookSession] = {}
 _engine = None
+_library: Library | None = None
+
+
+def library() -> Library:
+    global _library
+    if _library is None:
+        _library = default_library()
+    return _library
 
 
 def _get_engine():
@@ -69,9 +81,6 @@ def _find_web_dir() -> Path | None:
     once the package is no longer run from a checkout: in the container the code
     lives in site-packages while `web/` sits in the working directory, so the
     client silently was not served and `/` fell through to the API docs.
-
-    The order below holds in both cases -- an explicit override first, then the
-    working directory, then the checkout layout as a last resort.
     """
     override = os.environ.get("SCR_WEB_DIR")
     candidates = [
@@ -107,14 +116,176 @@ def health() -> dict:
         "status": "ok",
         "engine": getattr(engine, "name", "unknown"),
         "engines_available": available_engines(),
-        "sessions": len(_sessions),
+        "books": len(library().list()),
+        "open_captures": len(_captures),
         "jobs": _queue.stats(),
     }
 
 
+# ---------------------------------------------------------------------- books
+
+
+@app.post("/v1/books", status_code=201)
+def create_book(payload: dict = Body(default_factory=dict)) -> dict:
+    title = str(payload.get("title") or "").strip()
+    language = str(payload.get("language") or Config().ocr_lang.split("+")[0])
+    return library().create(title=title, language=language).as_dict()
+
+
+@app.get("/v1/books")
+def list_books() -> dict:
+    return {"books": [record.as_dict() for record in library().list()]}
+
+
+@app.get("/v1/books/{book_id}")
+def get_book(book_id: str) -> dict:
+    record = _require_book(book_id)
+    return {
+        "book": record.as_dict(),
+        "pages": [_page_payload(page) for page in library().pages(book_id)],
+        "capturing": book_id in _captures,
+    }
+
+
+@app.patch("/v1/books/{book_id}")
+def rename_book(book_id: str, payload: dict = Body(...)) -> dict:
+    _require_book(book_id)
+    title = str(payload.get("title") or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title must not be empty")
+    return library().rename(book_id, title).as_dict()
+
+
+@app.delete("/v1/books/{book_id}")
+def delete_book(book_id: str) -> dict:
+    _require_book(book_id)
+    library().delete(book_id)
+    _captures.pop(book_id, None)
+    return {"deleted": book_id}
+
+
+# -------------------------------------------------------------------- capture
+
+
+@app.post("/v1/books/{book_id}/frames")
+async def push_frame(book_id: str, file: UploadFile = File(...)) -> dict:
+    """Feed one frame into a book. The response tells the client what to show."""
+    record = _require_book(book_id)
+    image = _decode(await file.read())
+    session = _capture_session(book_id)
+
+    index = int(session.edge.stats["frames"])
+    captured = session.feed(Frame(index=index, timestamp=0.0, image=image))
+
+    stored = []
+    for page in captured:
+        number = library().add_page(book_id, page, session.images[page.page_number])
+        # The library owns page numbering: a session counts from 1 every time it
+        # starts, while a book continued tomorrow carries on from where it left.
+        page.page_number = number
+        stored.append(_page_payload(page))
+
+    return {
+        "state": session.edge.state.value,
+        "motion": round(session.edge.tracker.last_motion, 2),
+        # The detected page outline in the pixel space of the frame just sent, so
+        # the client can draw what the detector sees rather than guess.
+        "quad": session.edge.last_quad,
+        "frame_size": session.edge.last_frame_size,
+        "rejection": list(session.edge.last_rejection),
+        "captured_now": stored,
+        "total_pages": library().get(book_id).page_count if stored else record.page_count,
+    }
+
+
+@app.post("/v1/books/{book_id}/close")
+def close_capture(book_id: str) -> dict:
+    """Drop the in-memory capture state. The book and its pages stay."""
+    _require_book(book_id)
+    _captures.pop(book_id, None)
+    return {"closed": book_id}
+
+
+# ---------------------------------------------------------------------- pages
+
+
+@app.get("/v1/books/{book_id}/pages/{page_number}/script")
+def page_script(book_id: str, page_number: int) -> dict:
+    """The read-aloud script: text to speak plus word geometry.
+
+    The client must speak exactly the `text` returned here and resolve the
+    engine's character offsets against these words -- see `export.speech` for
+    why rebuilding the utterance client-side desynchronises the highlight.
+    """
+    return speech.build_script(_require_page(book_id, page_number).ocr).as_dict()
+
+
+@app.get("/v1/books/{book_id}/pages/{page_number}/image")
+def page_image(book_id: str, page_number: int) -> Response:
+    """The rectified, dewarped page the word boxes are measured against."""
+    _require_book(book_id)
+    image = library().page_image(book_id, page_number)
+    if image is None:
+        raise HTTPException(status_code=404, detail=f"no page {page_number}")
+
+    ok, buffer = cv2.imencode(".png", image)
+    if not ok:  # pragma: no cover - encoder failure
+        raise HTTPException(status_code=500, detail="could not encode page image")
+    return Response(
+        content=buffer.tobytes(),
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+# -------------------------------------------------------------------- exports
+
+
+@app.get("/v1/books/{book_id}/pdf")
+def book_pdf(book_id: str) -> StreamingResponse:
+    record = _require_book(book_id)
+    pages = _require_pages(book_id)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = pdf_export.write_pdf(
+            pages, library().page_images(book_id), Path(tmp) / "book.pdf", title=record.title
+        )
+        payload = path.read_bytes()
+
+    return StreamingResponse(
+        io.BytesIO(payload),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{_filename(record.title)}.pdf"'},
+    )
+
+
+@app.get("/v1/books/{book_id}/epub")
+def book_epub(book_id: str) -> Response:
+    """Reflowable text, for reading rather than for checking against the original."""
+    record = _require_book(book_id)
+    pages = _require_pages(book_id)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = epub_export.write_epub(
+            pages,
+            Path(tmp) / "book.epub",
+            epub_export.EpubMetadata(title=record.title, language=record.language),
+        )
+        payload = path.read_bytes()
+
+    return Response(
+        content=payload,
+        media_type="application/epub+zip",
+        headers={"Content-Disposition": f'attachment; filename="{_filename(record.title)}.epub"'},
+    )
+
+
+# ------------------------------------------------------- stateless recognition
+
+
 @app.post("/v1/pages")
 async def recognise_page(file: UploadFile = File(...)) -> JSONResponse:
-    """Stateless single-photo recognition, queued so the request returns at once."""
+    """One photo in, text out, without keeping a book. Queued so this returns at once."""
     image = _decode(await file.read())
     session = BookSession(engine=_get_engine())
 
@@ -137,132 +308,7 @@ def job_status(job_id: str) -> dict:
     return job.as_dict()
 
 
-@app.post("/v1/sessions")
-def create_session() -> dict:
-    session = BookSession(engine=_get_engine())
-    session_id = "s_" + uuid.uuid4().hex[:12]
-    _sessions[session_id] = session
-    return {"session_id": session_id, "engine": getattr(session.engine, "name", "unknown")}
-
-
-@app.post("/v1/sessions/{session_id}/frames")
-async def push_frame(session_id: str, file: UploadFile = File(...)) -> dict:
-    """Feed one frame. The response tells the client what to show the reader."""
-    session = _require_session(session_id)
-    image = _decode(await file.read())
-
-    index = int(session.edge.stats["frames"])
-    pages = session.feed(Frame(index=index, timestamp=0.0, image=image))
-
-    return {
-        "state": session.edge.state.value,
-        "motion": round(session.edge.tracker.last_motion, 2),
-        # The detected page outline, in the pixel space of the frame just sent,
-        # so the client can draw it over its own preview and see what the
-        # detector sees. None means no page was found in this frame.
-        "quad": session.edge.last_quad,
-        "frame_size": session.edge.last_frame_size,
-        "rejection": list(session.edge.last_rejection),
-        "captured_now": [_page_payload(page) for page in pages],
-        "total_pages": len(session.pages),
-    }
-
-
-@app.get("/v1/sessions/{session_id}")
-def session_status(session_id: str) -> dict:
-    session = _require_session(session_id)
-    return {
-        "session_id": session_id,
-        "summary": session.summary(),
-        "pages": [_page_payload(page) for page in session.pages],
-    }
-
-
-@app.get("/v1/sessions/{session_id}/pages/{page_number}/script")
-def page_script(session_id: str, page_number: int) -> dict:
-    """The read-aloud script for one page: text to speak + word geometry.
-
-    The client must speak exactly the `text` returned here and resolve the
-    engine's character offsets against these words -- see `export.speech` for
-    why rebuilding the utterance client-side desynchronises the highlight.
-    """
-    page = _require_page(_require_session(session_id), page_number)
-    return speech.build_script(page.ocr).as_dict()
-
-
-@app.get("/v1/sessions/{session_id}/pages/{page_number}/image")
-def page_image(session_id: str, page_number: int) -> Response:
-    """The rectified, dewarped page the word boxes are measured against.
-
-    Not the original frame: the boxes live in this image's coordinate space, so
-    any client drawing a highlight has to draw it over exactly these pixels.
-    """
-    session = _require_session(session_id)
-    _require_page(session, page_number)
-    image = session.images.get(page_number)
-    if image is None:
-        raise HTTPException(status_code=404, detail="page image not retained")
-
-    ok, buffer = cv2.imencode(".png", image)
-    if not ok:  # pragma: no cover - encoder failure
-        raise HTTPException(status_code=500, detail="could not encode page image")
-    return Response(
-        content=buffer.tobytes(),
-        media_type="image/png",
-        headers={"Cache-Control": "public, max-age=3600"},
-    )
-
-
-@app.get("/v1/sessions/{session_id}/pdf")
-def session_pdf(session_id: str) -> StreamingResponse:
-    session = _require_session(session_id)
-    if not session.pages:
-        raise HTTPException(status_code=409, detail="session has no pages yet")
-
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as tmp:
-        path = pdf_export.write_pdf(
-            session.pages, session.images, Path(tmp) / "book.pdf", title=session_id
-        )
-        payload = path.read_bytes()
-
-    return StreamingResponse(
-        io.BytesIO(payload),
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{session_id}.pdf"'},
-    )
-
-
-@app.get("/v1/sessions/{session_id}/epub")
-def session_epub(session_id: str) -> Response:
-    """Reflowable text, for reading rather than for checking against the original."""
-    session = _require_session(session_id)
-    if not session.pages:
-        raise HTTPException(status_code=409, detail="session has no pages yet")
-
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as tmp:
-        path = epub_export.write_epub(
-            session.pages,
-            Path(tmp) / "book.epub",
-            epub_export.EpubMetadata(title=session_id, language=Config().ocr_lang.split("+")[0]),
-        )
-        payload = path.read_bytes()
-
-    return Response(
-        content=payload,
-        media_type="application/epub+zip",
-        headers={"Content-Disposition": f'attachment; filename="{session_id}.epub"'},
-    )
-
-
-@app.delete("/v1/sessions/{session_id}")
-def close_session(session_id: str) -> dict:
-    _require_session(session_id)
-    del _sessions[session_id]
-    return {"closed": session_id}
+# -------------------------------------------------------------------- helpers
 
 
 class _OneFrame:
@@ -277,18 +323,41 @@ class _OneFrame:
         yield Frame(index=0, timestamp=0.0, image=self._image)
 
 
-def _require_session(session_id: str) -> BookSession:
-    session = _sessions.get(session_id)
+def _capture_session(book_id: str) -> BookSession:
+    """Live capture state for a book, created on the first frame.
+
+    Seeded with the hashes of pages already stored: without them, reopening a
+    book to add more pages would capture the page still under the camera as if
+    it had never been seen.
+    """
+    session = _captures.get(book_id)
     if session is None:
-        raise HTTPException(status_code=404, detail="unknown session")
+        session = BookSession(engine=_get_engine())
+        session.edge.deduper.seed(library().page_hashes(book_id))
+        _captures[book_id] = session
     return session
 
 
-def _require_page(session: BookSession, page_number: int) -> PageResult:
-    for page in session.pages:
-        if page.page_number == page_number:
-            return page
-    raise HTTPException(status_code=404, detail=f"session has no page {page_number}")
+def _require_book(book_id: str):
+    try:
+        return library().get(book_id)
+    except BookNotFound:
+        raise HTTPException(status_code=404, detail="unknown book") from None
+
+
+def _require_pages(book_id: str) -> list[PageResult]:
+    pages = library().pages(book_id)
+    if not pages:
+        raise HTTPException(status_code=409, detail="book has no pages yet")
+    return pages
+
+
+def _require_page(book_id: str, page_number: int) -> PageResult:
+    _require_book(book_id)
+    page = library().page(book_id, page_number)
+    if page is None:
+        raise HTTPException(status_code=404, detail=f"no page {page_number}")
+    return page
 
 
 def _decode(payload: bytes) -> np.ndarray:
@@ -296,6 +365,12 @@ def _decode(payload: bytes) -> np.ndarray:
     if image is None:
         raise HTTPException(status_code=400, detail="could not decode image")
     return image
+
+
+def _filename(title: str) -> str:
+    """A title is free text; a Content-Disposition filename is not."""
+    safe = "".join(char if char.isalnum() or char in " -_" else "-" for char in title).strip()
+    return (safe or "book").replace(" ", "_")[:60] or uuid.uuid4().hex[:8]
 
 
 def _page_payload(page: PageResult) -> dict:
