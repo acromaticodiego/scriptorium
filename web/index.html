@@ -43,6 +43,11 @@
     flex: 1; min-width: 0; padding: 9px 12px; border-radius: 7px;
     background: #15130f; color: var(--ink); border: 1px solid var(--line); font: inherit;
   }
+  select {
+    flex: 1; min-width: 0; padding: 7px 10px; border-radius: 7px;
+    background: #15130f; color: var(--ink); border: 1px solid var(--line);
+    font: inherit; font-size: 12px;
+  }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
 
   /* ---------------------------------------------------------- library view */
@@ -164,6 +169,11 @@
         <div class="controls">
           <button id="add-pages" class="primary">Add pages</button>
           <button id="stop-camera" disabled>Stop camera</button>
+        </div>
+        <div class="row">
+          <span>camera</span>
+          <select id="camera" title="Which camera to capture from"></select>
+          <span id="camera-details"></span>
         </div>
         <div class="row">
           <label class="toggle">
@@ -380,16 +390,106 @@
     badge.textContent = label || STATE_LABEL[state] || state;
   }
 
+  // Which camera to use, remembered between sessions.
+  //
+  // `facingMode: "environment"` is a hint for phones and means nothing on a
+  // desktop, where cameras do not report which way they point -- so the browser
+  // hands back its default, which is the built-in webcam looking at your face.
+  // For a book scanner the right camera is almost never that one: it is a USB
+  // camera on an arm above the page. So the choice has to be explicit.
+  const CAMERA_KEY = "scriptorium.camera";
+
+  function savedCamera() {
+    try {
+      return localStorage.getItem(CAMERA_KEY) || "";
+    } catch {
+      return ""; // private windows and blocked site data both throw here
+    }
+  }
+
+  function rememberCamera(deviceId) {
+    try {
+      if (deviceId) localStorage.setItem(CAMERA_KEY, deviceId);
+      else localStorage.removeItem(CAMERA_KEY);
+    } catch {
+      /* not being able to remember the choice is not worth failing over */
+    }
+  }
+
+  async function listCameras() {
+    const select = el("camera");
+    let devices = [];
+    try {
+      devices = (await navigator.mediaDevices.enumerateDevices()).filter(
+        (device) => device.kind === "videoinput",
+      );
+    } catch {
+      return;
+    }
+
+    const wanted = select.value || savedCamera();
+    select.innerHTML = "";
+    if (!devices.length) {
+      select.append(new Option("no camera found", ""));
+      return;
+    }
+
+    for (const [index, device] of devices.entries()) {
+      // Labels are empty until camera permission has been granted at least
+      // once, which is why the list is refreshed again after the stream opens.
+      select.append(new Option(device.label || `Camera ${index + 1}`, device.deviceId));
+    }
+    if (devices.some((device) => device.deviceId === wanted)) select.value = wanted;
+  }
+
   async function startCamera() {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 1920 }, facingMode: "environment" },
-    });
+    const wanted = el("camera").value || savedCamera();
+    const video = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+    if (wanted) video.deviceId = { exact: wanted };
+    else video.facingMode = "environment";
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video });
+    } catch (error) {
+      // A remembered camera that has since been unplugged must not be a dead
+      // end: forget it and fall back to whatever is attached.
+      if (!wanted || !(error.name === "OverconstrainedError" || error.name === "NotFoundError")) {
+        throw error;
+      }
+      rememberCamera("");
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
+      });
+    }
+
     el("video").srcObject = stream;
     await el("video").play();
+
+    // Now that permission exists, the device labels are readable: list again so
+    // the dropdown shows real names instead of "Camera 1, Camera 2".
+    const track = stream.getVideoTracks()[0];
+    rememberCamera(track?.getSettings?.().deviceId || "");
+    await listCameras();
+    if (track) el("camera").value = track.getSettings?.().deviceId || el("camera").value;
+    showCameraDetails();
 
     el("add-pages").disabled = true;
     el("stop-camera").disabled = false;
     timer = setInterval(() => sendFrame(), 1000 / SEND_HZ);
+  }
+
+  function showCameraDetails() {
+    const settings = stream?.getVideoTracks()[0]?.getSettings?.();
+    el("camera-details").textContent = settings
+      ? `${settings.width}x${settings.height}`
+      : "";
+  }
+
+  async function switchCamera() {
+    rememberCamera(el("camera").value);
+    if (!stream) return;
+    stopCamera();
+    await startCamera();
   }
 
   function stopCamera() {
@@ -401,6 +501,7 @@
     el("stop-camera").disabled = true;
     drawQuad(null, null);
     el("hint").hidden = true;
+    el("camera-details").textContent = "";
     setState("searching", "camera off");
     if (book) fetch(`/v1/books/${book.id}/close`, { method: "POST" }).catch(() => {});
   }
@@ -711,6 +812,10 @@
   el("back").addEventListener("click", () => showLibrary().catch(reportError));
   el("add-pages").addEventListener("click", () => startCamera().catch(reportError));
   el("stop-camera").addEventListener("click", stopCamera);
+  el("camera").addEventListener("change", () => switchCamera().catch(reportError));
+  // A camera plugged in or unplugged mid-session should appear or disappear
+  // from the list without a reload.
+  navigator.mediaDevices?.addEventListener?.("devicechange", () => listCameras());
   el("pdf").addEventListener("click", () => window.open(`/v1/books/${book.id}/pdf`, "_blank"));
   el("epub").addEventListener("click", () => window.open(`/v1/books/${book.id}/epub`, "_blank"));
   el("play").addEventListener("click", play);
@@ -729,6 +834,11 @@
 
   // Voices arrive asynchronously in Chrome.
   if (synth) synth.addEventListener?.("voiceschanged", () => {});
+
+  // Populate the picker up front. Before permission is granted the browser
+  // withholds the labels, so the entries read "Camera 1, Camera 2" until the
+  // first capture; they are refreshed with real names once the stream opens.
+  listCameras();
 
   showLibrary().catch(reportError);
 </script>

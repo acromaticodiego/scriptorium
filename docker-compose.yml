@@ -19,4 +19,8 @@ services:
       - ./data:/app/data
       # Captures written by the CLI inside the container stay visible on the host.
       - ./out:/app/out
+      # The browser client, read-only, so editing it is a page refresh rather
+      # than an image rebuild. The image still carries its own copy, which is
+      # what a deployment uses; this only shadows it for local work.
+      - ./web:/app/web:ro
     restart: unless-stopped
