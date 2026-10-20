@@ -68,6 +68,14 @@ def main(argv: list[str] | None = None) -> int:
         help="print the reading script without speaking (no audio device needed)",
     )
 
+    truth = sub.add_parser(
+        "groundtruth",
+        help="prepare ground-truth drafts for a folder of real photos",
+    )
+    truth.add_argument("directory", help="folder of page photographs")
+    truth.add_argument("--engine", default="auto")
+    truth.add_argument("--lang", default="spa+eng")
+
     sub.add_parser("doctor", help="report which OCR engines are usable here")
 
     serve = sub.add_parser("serve", help="run the HTTP API")
@@ -86,6 +94,8 @@ def main(argv: list[str] | None = None) -> int:
         return _demo(args)
     if args.command == "read":
         return _read(args)
+    if args.command == "groundtruth":
+        return _groundtruth(args)
     if args.command == "doctor":
         return _doctor()
     if args.command == "serve":
@@ -270,6 +280,78 @@ def _read(args) -> int:
 
     print(f"\n{len(session.pages)} page(s) read")
     return 0 if session.pages else 1
+
+
+def _groundtruth(args) -> int:
+    """Seed a .txt transcription beside each photo, for `eval/run.py --real-dir`.
+
+    Synthetic pages measure what the pipeline contributes; only real paper
+    measures what a reader would actually get. The blocker is never the code, it
+    is that transcribing pages by hand is slow enough not to happen -- so each
+    draft starts from the recognised text and is marked unreviewed until a person
+    corrects it and deletes the marker. The harness refuses to score a file that
+    still carries it, which is what keeps the comparison from being circular.
+    """
+    import cv2
+
+    cfg = Config(ocr_engine=args.engine, ocr_lang=args.lang)
+    engine = get_engine(cfg.ocr_engine, cfg.ocr_lang)
+    if getattr(engine, "name", "") == "stub":
+        print("refusing to seed drafts from the stub engine -- run doctor", file=sys.stderr)
+        return 1
+
+    folder = Path(args.directory)
+    if not folder.is_dir():
+        print(f"not a directory: {folder}", file=sys.stderr)
+        return 1
+
+    suffixes = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+    photos = sorted(p for p in folder.iterdir() if p.suffix.lower() in suffixes)
+    if not photos:
+        print(f"no photographs found in {folder}", file=sys.stderr)
+        return 1
+
+    written, skipped, failed = 0, 0, 0
+    for photo in photos:
+        target = photo.with_suffix(".txt")
+        if target.exists():
+            skipped += 1
+            continue
+        session = BookSession(cfg=cfg, engine=engine)
+        image = cv2.imread(str(photo))
+        if image is None:
+            print(f"  {photo.name}: unreadable", file=sys.stderr)
+            failed += 1
+            continue
+        pages = session.run(_StillImage(image))
+        if not pages:
+            print(f"  {photo.name}: no page detected ({session.edge.last_rejection})")
+            failed += 1
+            continue
+        text_export.write_draft_truth("\n\n".join(p.text for p in pages), target)
+        print(f"  {photo.name} -> {target.name} ({len(pages)} page(s))")
+        written += 1
+
+    print(f"\n{written} draft(s) written, {skipped} already present, {failed} failed")
+    if written:
+        print(
+            "\nNow correct each .txt against the photo, delete the UNREVIEWED line, "
+            "and run:\n"
+            f"  python -m eval.run --real-dir {folder}"
+        )
+    return 0
+
+
+class _StillImage:
+    """One decoded photograph as a FrameSource."""
+
+    is_still = True
+
+    def __init__(self, image) -> None:
+        self._image = image
+
+    def frames(self):
+        yield Frame(index=0, timestamp=0.0, image=self._image)
 
 
 def _doctor() -> int:

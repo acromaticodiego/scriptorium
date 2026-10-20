@@ -7,7 +7,7 @@ read aloud, with the highlight following the voice word by word.
 
 [![ci](https://github.com/acromaticodiego/scriptorium/actions/workflows/ci.yml/badge.svg)](https://github.com/acromaticodiego/scriptorium/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)
-![tests](https://img.shields.io/badge/tests-97-brightgreen)
+![tests](https://img.shields.io/badge/tests-104-brightgreen)
 ![CER](https://img.shields.io/badge/CER%20vs%20naive%20OCR-−97%25-brightgreen)
 [![license](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
@@ -81,7 +81,7 @@ No camera, no OCR engine, no sample photos needed — the repo ships a capture
 make install            # or: python -m venv .venv && pip install -e ".[api,dev]"
 make demo               # simulates curled, tilted, unevenly lit captures
                         # -> out/demo/demo.pdf
-make test               # 97 tests, no OCR binary required
+make test               # 104 tests, no OCR binary required
 ```
 
 For real recognition, add an engine — `make install-ocr` prints the one command for

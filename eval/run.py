@@ -87,27 +87,48 @@ def build_synthetic_samples(pages: int, difficulties: list[str]) -> list[Sample]
 
 
 def load_real_samples(directory: str | Path) -> list[Sample]:
-    """Load real captures: `page.jpg` paired with `page.txt` ground truth."""
+    """Load real captures: `page.jpg` paired with a reviewed `page.txt`.
+
+    Drafts seeded by `scriptorium groundtruth` are **skipped**, loudly. They
+    start as the pipeline's own output, so scoring against one that nobody
+    corrected would compare the hypothesis to itself and report a perfect result.
+    A reviewed file is one a person deliberately unmarked.
+    """
     import cv2
+
+    from scriptorium.export.text import read_reviewed_truth
 
     folder = Path(directory)
     samples = []
+    unreviewed: list[str] = []
     for image_path in sorted(folder.glob("*")):
         if image_path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
             continue
         truth_path = image_path.with_suffix(".txt")
         if not truth_path.exists():
             continue
+
+        truth = read_reviewed_truth(truth_path)
+        if truth is None:
+            unreviewed.append(truth_path.name)
+            continue
+        if not truth.strip():
+            continue
+
         frame = cv2.imread(str(image_path))
         if frame is None:
             continue
         samples.append(
-            Sample(
-                name=image_path.stem,
-                frame=frame,
-                truth=truth_path.read_text(encoding="utf-8"),
-                difficulty="real",
-            )
+            Sample(name=image_path.stem, frame=frame, truth=truth, difficulty="real")
+        )
+
+    if unreviewed:
+        print(
+            "SKIPPED {} unreviewed ground-truth draft(s): {}\n"
+            "         They still hold the pipeline's own output, so scoring "
+            "against them would be circular.\n"
+            "         Correct each one against its photo and delete the "
+            "UNREVIEWED line.".format(len(unreviewed), ", ".join(unreviewed))
         )
     return samples
 
