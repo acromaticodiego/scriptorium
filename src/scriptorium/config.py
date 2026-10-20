@@ -213,6 +213,28 @@ class Config:
     dewarp: DewarpConfig = field(default_factory=DewarpConfig)
     dedup: DedupConfig = field(default_factory=DedupConfig)
     split_spreads: bool = True
+    # Cheap pre-filter for spread detection; the gutter is what decides. Measured
+    # on real captures of an open book: a single page is 0.56-0.62 wide for its
+    # height, a two-page spread 1.12-1.14. See `vision.spread.analyse`.
+    spread_min_aspect: float = field(
+        default_factory=lambda: _env_float("SCR_SPREAD_ASPECT", 0.9)
+    )
+    # How free of ink the gutter column must be.
+    #
+    # Real spreads score 0.87-1.00 over 11 captures. The population that has to
+    # be kept out is not the half-pages -- those are refused by aspect long
+    # before this -- but a *wide single page* whose text runs edge to edge: the
+    # gaps between words and the ragged line ends leave the emptiest central
+    # column at 0.53-0.58, so a bar at 0.5 would have cut landscape pages down
+    # the middle. 0.7 sits in the gap between 0.58 and 0.87.
+    spread_min_confidence: float = field(
+        default_factory=lambda: _env_float("SCR_SPREAD_CONF", 0.7)
+    )
+    # ...and the blank band has to be a band. Measured: every wide single page
+    # gave 0.0% of the width, every real spread 0.9% to 8.7%.
+    spread_min_gutter_span: float = field(
+        default_factory=lambda: _env_float("SCR_SPREAD_SPAN", 0.004)
+    )
     # Discard captures the engine found no words in. They are what a failed
     # detection produces, and storing them fills a book with artefacts that
     # nothing downstream can tell apart from real pages.

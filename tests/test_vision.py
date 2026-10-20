@@ -458,3 +458,75 @@ class TestDetectionReasons:
         blank = np.full((400, 600, 3), 128, np.uint8)
         for image in (blank, scene[0]):
             assert detect.locate(image).reason in known
+
+
+class TestSpreadDetection:
+    """An open book is two pages, and missing that is not a cosmetic failure.
+
+    Fed whole to OCR, a spread comes back with sentences from the left page
+    continuing into the right one, so the transcription is wrong in a way that
+    reads as plausible text.
+    """
+
+    def _spread(self) -> np.ndarray:
+        """Two text pages side by side, with a blank gutter between them."""
+        page, _ = synth.render_page(_PAGE_TEXT)
+        gutter = np.full((page.shape[0], 70, 3), 222, np.uint8)
+        return np.hstack([page, gutter, page.copy()])
+
+    def test_a_spread_is_split_at_the_gutter(self):
+        image = self._spread()
+        result = spread.analyse(image)
+        assert result.is_spread, result.reason
+        middle = image.shape[1] // 2
+        assert abs(result.gutter_x - middle) < image.shape[1] * 0.08
+
+    def test_the_gutter_is_found_without_a_shadow(self):
+        """The signal is missing ink, not a dark spine.
+
+        The first implementation looked for the spine's shadow. Measured over 11
+        real captures of one book on one stand, the brightness drop at the gutter
+        was 39-51 grey levels in five and 1-7 in the other six -- with flat
+        lighting the spine casts no shadow at all, and those spreads went to OCR
+        whole. This fixture has a uniformly lit gutter, so it fails outright
+        under the old approach.
+        """
+        image = self._spread()
+        band = image[:, int(image.shape[1] * 0.45) : int(image.shape[1] * 0.55)]
+        assert band.mean() > 200, "the gutter in this fixture is not shadowed"
+        assert spread.analyse(image).is_spread
+
+    def test_a_single_page_is_not_split(self, clean_page):
+        result = spread.analyse(clean_page)
+        assert not result.is_spread
+        assert "portrait" in result.reason
+
+    @pytest.mark.parametrize("width", [1900, 2200, 2500, 2800])
+    def test_a_wide_page_with_continuous_text_is_not_split(self, width):
+        """The population that actually has to be kept out.
+
+        Half-pages are refused by aspect long before the gutter check. What
+        reaches it is a landscape page whose text runs edge to edge, and its
+        emptiest central column -- made of the gaps between words and the ragged
+        line ends -- scores 0.38 to 0.74 against 0.87 for the thinnest real
+        gutter. Depth alone is too close, and it moves with the wording, which
+        is why the band also has to have width.
+        """
+        page, _ = synth.render_page(_PAGE_TEXT * 3, width=width, height=1600)
+        result = spread.analyse(page)
+        assert not result.is_spread, f"split a continuous page (conf {result.confidence:.2f})"
+
+    # There is deliberately no "a 4 px gap is not a gutter" test here. Every
+    # attempt to build one by pasting two page images together produced a real
+    # gutter instead: whole pages bring their own inner margins, and cropping
+    # those off still leaves each text block's ragged right edge, which measured
+    # 80 px of near-blank on its own. The case that matters is a genuinely
+    # rendered wide page, which the test above covers with real pixels rather
+    # than a construction that keeps describing the opposite of its name.
+
+    def test_a_blank_page_is_not_split(self):
+        """With no text anywhere, nothing can be located by its absence."""
+        blank = np.full((1600, 1900, 3), 235, np.uint8)
+        result = spread.analyse(blank)
+        assert not result.is_spread
+        assert result.reason == "no_text"
