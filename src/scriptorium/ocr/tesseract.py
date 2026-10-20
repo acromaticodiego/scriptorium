@@ -37,6 +37,37 @@ def find_binary() -> str | None:
     return next((c for c in _WINDOWS_CANDIDATES if Path(c).exists()), None)
 
 
+def find_tessdata() -> str | None:
+    """Locate a language-data directory: `SCR_TESSDATA_DIR`, then `./tessdata`.
+
+    The convention exists because of how the engine fails without it. Language
+    models are a separate download from the binary -- the Windows installer ships
+    English only -- and a missing model does not raise anything useful: the
+    registry's `auto` mode falls through to the next engine and ends up on the
+    stub. The run then *succeeds*, producing placeholder text, which is a far
+    worse outcome than an error.
+
+    Only the working directory is searched, deliberately. Resolving a path
+    relative to this file would work from a source checkout and point at
+    something arbitrary once the package is installed in site-packages, so the
+    same code would behave differently depending on how it was installed. "The
+    directory you run from" is a rule that holds either way -- and one a test can
+    actually pin down.
+
+    A directory with no `.traineddata` in it is not language data and must not
+    shadow the system-wide install. Returning None is the normal case: it means
+    the system directory already has what is needed.
+    """
+    override = os.environ.get("SCR_TESSDATA_DIR")
+    if override and Path(override).is_dir():
+        return override
+
+    local = Path.cwd() / "tessdata"
+    if local.is_dir() and any(local.glob("*.traineddata")):
+        return str(local)
+    return None
+
+
 class TesseractEngine:
     name = "tesseract"
 
@@ -73,7 +104,7 @@ class TesseractEngine:
         # Language models are a separate download again -- the Windows installer
         # ships English only by default. Requesting a missing one fails the whole
         # call, so check up front and say which is missing.
-        self.tessdata_dir = tessdata_dir or os.environ.get("SCR_TESSDATA_DIR") or None
+        self.tessdata_dir = tessdata_dir or find_tessdata()
         if self.tessdata_dir:
             # Via the environment, not the `--tessdata-dir` flag. pytesseract
             # splits its config string with `shlex.split(posix=not_windows)`,
