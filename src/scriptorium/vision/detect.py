@@ -34,9 +34,9 @@ def find_page(image: np.ndarray, cfg: DetectConfig | None = None) -> Quad | None
     work = cv2.GaussianBlur(work, (5, 5), 0)
     frame_area = float(work.shape[0] * work.shape[1])
 
-    quad = _find_by_edges(work, frame_area, cfg.min_area_ratio)
+    quad = _find_by_edges(work, frame_area, cfg)
     if quad is None:
-        quad = _find_by_brightness(work, frame_area, cfg.min_area_ratio)
+        quad = _find_by_brightness(work, frame_area, cfg)
     if quad is None:
         return None
 
@@ -86,7 +86,13 @@ def order_corners(points: np.ndarray) -> Quad:
     return np.roll(ordered, -start, axis=0).astype(np.float32)
 
 
-def _find_by_edges(work: np.ndarray, frame_area: float, min_area_ratio: float) -> Quad | None:
+def _plausible_area(quad: np.ndarray, frame_area: float, cfg: DetectConfig) -> bool:
+    """Is this quad the right size to be a page, rather than noise or the frame?"""
+    ratio = cv2.contourArea(quad.astype(np.float32)) / frame_area
+    return cfg.min_area_ratio <= ratio <= cfg.max_area_ratio
+
+
+def _find_by_edges(work: np.ndarray, frame_area: float, cfg: DetectConfig) -> Quad | None:
     median = float(np.median(work))
     lower = int(max(0, 0.66 * median))
     upper = int(min(255, 1.33 * median))
@@ -99,13 +105,14 @@ def _find_by_edges(work: np.ndarray, frame_area: float, min_area_ratio: float) -
         approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
         if len(approx) != 4 or not cv2.isContourConvex(approx):
             continue
-        if cv2.contourArea(approx) / frame_area < min_area_ratio:
+        candidate = approx.reshape(4, 2).astype(np.float32)
+        if not _plausible_area(candidate, frame_area, cfg):
             continue
-        return approx.reshape(4, 2).astype(np.float32)
+        return candidate
     return None
 
 
-def _find_by_brightness(work: np.ndarray, frame_area: float, min_area_ratio: float) -> Quad | None:
+def _find_by_brightness(work: np.ndarray, frame_area: float, cfg: DetectConfig) -> Quad | None:
     _, binary = cv2.threshold(work, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
 
@@ -113,7 +120,9 @@ def _find_by_brightness(work: np.ndarray, frame_area: float, min_area_ratio: flo
     if not contours:
         return None
     largest = max(contours, key=cv2.contourArea)
-    if cv2.contourArea(largest) / frame_area < min_area_ratio:
+    box = np.asarray(cv2.boxPoints(cv2.minAreaRect(largest)), dtype=np.float32)
+    # The area check goes on the *box*, not the contour: minAreaRect can inflate
+    # a ragged contour considerably, and it is the box that gets rectified.
+    if not _plausible_area(box, frame_area, cfg):
         return None
-    box = cv2.boxPoints(cv2.minAreaRect(largest))
-    return np.asarray(box, dtype=np.float32)
+    return box

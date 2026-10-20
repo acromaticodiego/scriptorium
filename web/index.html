@@ -30,6 +30,16 @@
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
   .stage { position: relative; overflow: hidden; }
   video { display: block; width: 100%; background: #000; }
+  /* The detected page outline, drawn over the preview. Without it, "no page
+     detected" is an opaque refusal and there is no way to tell whether the page
+     is too small in frame or just too close in tone to the surface. */
+  #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .hint {
+    position: absolute; bottom: 12px; left: 12px; right: 12px;
+    padding: 7px 11px; border-radius: 7px; font-size: 12px;
+    background: rgba(0, 0, 0, 0.78); border: 1px solid var(--line);
+    color: var(--warn);
+  }
   .badge {
     position: absolute; top: 12px; left: 12px;
     padding: 5px 11px; border-radius: 999px;
@@ -102,6 +112,8 @@
     <div class="panel stage">
       <div id="badge" class="badge searching">idle</div>
       <video id="video" playsinline muted></video>
+      <canvas id="overlay"></canvas>
+      <div id="hint" class="hint" hidden></div>
       <div class="controls">
         <button id="start" class="primary">Start session</button>
         <button id="pdf" disabled>PDF</button>
@@ -228,6 +240,8 @@
       el("m-motion").textContent = Number(data.motion).toFixed(2);
       el("m-pages").textContent = data.total_pages;
       setState(data.state);
+      drawQuad(data.quad, data.frame_size);
+      showHint(data);
 
       if (data.captured_now?.length) {
         for (const page of data.captured_now) addPage(page);
@@ -241,6 +255,69 @@
       console.error(err);
     } finally {
       inFlight = false;
+    }
+  }
+
+  const HINTS = {
+    no_page:
+      "No page detected. Fill more of the frame with the page, and put the book " +
+      "on a surface that differs in tone from the paper.",
+    blurry: "Out of focus - hold steadier or move slightly further away.",
+    too_dark: "Too dark for reliable recognition - add light.",
+    too_bright: "Overexposed - reduce the light on the page.",
+    clipped: "Highlights blown out - move the lamp off the page.",
+    glare: "Reflection on the page - move the lamp to the side, not in front.",
+  };
+
+  function showHint(data) {
+    const hint = el("hint");
+    const reason = (data.rejection || [])[0];
+    if (!reason || data.captured_now?.length) {
+      hint.hidden = true;
+      return;
+    }
+    const key = String(reason).split("(")[0];
+    hint.hidden = false;
+    hint.textContent = HINTS[key] || key;
+  }
+
+  function drawQuad(quad, frameSize) {
+    const canvas = el("overlay");
+    // Match the backing store to the displayed size, or the outline lands in the
+    // wrong place on a high-DPI screen.
+    const rect = canvas.getBoundingClientRect();
+    if (canvas.width !== Math.round(rect.width) || canvas.height !== Math.round(rect.height)) {
+      canvas.width = Math.round(rect.width);
+      canvas.height = Math.round(rect.height);
+    }
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!quad?.length || !frameSize?.[0]) return;
+
+    // The server reports corners in the pixel space of the frame it received,
+    // which is the downscaled upload, not the preview. Scale, do not assume.
+    const sx = canvas.width / frameSize[0];
+    const sy = canvas.height / frameSize[1];
+
+    ctx.beginPath();
+    quad.forEach(([x, y], index) => {
+      const px = x * sx;
+      const py = y * sy;
+      if (index === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    });
+    ctx.closePath();
+    ctx.strokeStyle = "rgba(127, 176, 105, 0.95)";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.fillStyle = "rgba(127, 176, 105, 0.12)";
+    ctx.fill();
+
+    for (const [x, y] of quad) {
+      ctx.beginPath();
+      ctx.arc(x * sx, y * sy, 5, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(127, 176, 105, 0.95)";
+      ctx.fill();
     }
   }
 
@@ -275,6 +352,8 @@
     el("start").disabled = false;
     el("stop").disabled = true;
     setState("searching");
+    drawQuad(null, null);
+    el("hint").hidden = true;
   }
 
   // ---------------------------------------------------------- reading aloud
