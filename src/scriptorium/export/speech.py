@@ -19,7 +19,9 @@ pyttsx3, and a cloud voice all consume the same script.
 
 from __future__ import annotations
 
+import re
 from bisect import bisect_right
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -133,6 +135,42 @@ def build_script(page: OcrPage) -> ReadingScript:
         rejoined_words=rejoined,
         ends_mid_word=bool(words) and words[-1].text[-1:] in _HYPHENS,
     )
+
+
+def stitch_page_texts(texts: Sequence[str]) -> list[str]:
+    """Repair words cut by a *page* break, across a sequence of page texts.
+
+    `build_script` and `page_text` repair a word split across a line break, but a
+    word cut at the bottom of a page continues on the next one, and neither
+    function can see that far: when a page is recognised the next one may not
+    have been captured yet. So the repair happens here, once the pages exist
+    together.
+
+    The completed word is placed on the page where it *starts*, and removed from
+    the beginning of the next, which keeps the result usable per page -- a
+    Markdown section, an EPUB document, one page read aloud -- instead of only as
+    one continuous blob. Returns the same number of texts it was given.
+    """
+    repaired = list(texts)
+    for index in range(len(repaired) - 1):
+        current = repaired[index].rstrip()
+        if not current or current[-1] not in _HYPHENS or len(current) < 2:
+            continue
+
+        following = repaired[index + 1].lstrip()
+        match = re.match(r"(\w+)([\s\S]*)", following, flags=re.UNICODE)
+        if match is None:
+            continue
+        head, rest = match.group(1), match.group(2)
+        # Same guard as within a page: a lowercase continuation is a broken word,
+        # an uppercase one is a new sentence or a compound that merely happened to
+        # land on the boundary.
+        if not head[:1].islower():
+            continue
+
+        repaired[index] = current[:-1] + head
+        repaired[index + 1] = rest.lstrip()
+    return repaired
 
 
 def page_text(page: OcrPage) -> str:
